@@ -10,12 +10,25 @@ public class MyPipeline : RenderPipeline
 {
     private CullResults cull;
     private Material errorMaterial;
-
+    private DrawRendererFlags drawFlags;
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
         name = "Render Camera"
     };
+
+    public MyPipeline(bool dynamicBatching, bool instancing)
+    {
+        if (dynamicBatching)
+        {
+            drawFlags = DrawRendererFlags.EnableDynamicBatching;
+        }
+
+        if (instancing)
+        {
+            drawFlags |= DrawRendererFlags.EnableInstancing;
+        }
+    }
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
     {
@@ -57,6 +70,8 @@ public class MyPipeline : RenderPipeline
 
 
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"));
+        //因为 Unity 更喜欢将对象空间化地分组以减少overdraw
+        drawSettings.flags = drawFlags;
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
         var filterSettings = new FilterRenderersSettings(true)
         {
