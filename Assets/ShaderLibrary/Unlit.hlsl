@@ -25,7 +25,7 @@
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 	
 	UNITY_INSTANCING_BUFFER_START(PerInstance)
-	UNITY_DEFINE_INSTANCED_PROP	(float4, _Color)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
 	UNITY_INSTANCING_BUFFER_END(PerInstance)
 	
 	struct VertexInput

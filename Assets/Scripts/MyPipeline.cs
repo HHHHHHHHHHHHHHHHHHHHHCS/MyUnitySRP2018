@@ -8,9 +8,17 @@ using Conditional = System.Diagnostics.ConditionalAttribute;
 
 public class MyPipeline : RenderPipeline
 {
+    private const int maxVisibleLights = 4;
+
+    private static int visibleLightColorsId = Shader.PropertyToID("_VisibleLightColors");
+    private static int visibleLightDirectionsOrPositionsId = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
+
     private CullResults cull;
     private Material errorMaterial;
     private DrawRendererFlags drawFlags;
+
+    private Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
+    private Vector4[] visiblelightDirectionsOrPositions = new Vector4[maxVisibleLights];
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
@@ -19,6 +27,9 @@ public class MyPipeline : RenderPipeline
 
     public MyPipeline(bool dynamicBatching, bool instancing)
     {
+        //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
+        GraphicsSettings.lightsUseLinearIntensity = true;
+
         if (dynamicBatching)
         {
             drawFlags = DrawRendererFlags.EnableDynamicBatching;
@@ -64,7 +75,14 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0
             , (clearFlags & CameraClearFlags.Color) != 0, Color.clear);
 
+        ConfigureLights();
+
         cameraBuffer.BeginSample("Render Camera");
+
+        cameraBuffer.SetGlobalVectorArray(visibleLightColorsId, visibleLightColors);
+        cameraBuffer.SetGlobalVectorArray(visibleLightDirectionsOrPositionsId, visiblelightDirectionsOrPositions);
+
+
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
 
@@ -123,5 +141,40 @@ public class MyPipeline : RenderPipeline
 
         context.DrawRenderers(
             cull.visibleRenderers, ref drawSettings, filterSettings);
+    }
+
+    private void ConfigureLights()
+    {
+        int i = 0;
+        for (; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
+        {
+            VisibleLight light = cull.visibleLights[i];
+            visibleLightColors[i] = light.finalColor;
+
+            if (light.lightType == LightType.Directional)
+            {
+                //光线按照局部Z轴照射  第三列是Z轴旋转
+                Vector4 v = light.localToWorld.GetColumn(2);
+                //在shader中 我们需要的光的方向是 从表面到光的  所以要求反
+                //第四个分量总是零 只用对 x y z 求反
+                v.x = -v.x;
+                v.y = -v.y;
+                v.z = -v.z;
+                visiblelightDirectionsOrPositions[i] = v;
+            }
+            else
+            {
+                //第三个储存的是位置 w是1
+                visiblelightDirectionsOrPositions[i]
+                    = light.localToWorld.GetColumn(3);
+            }
+        }
+
+        //虽然在GPU中每次都是会强制计算四个光
+        //但是开销并不大
+        for (; i < maxVisibleLights; i++)
+        {
+            visibleLightColors[i] = Color.clear;
+        }
     }
 }

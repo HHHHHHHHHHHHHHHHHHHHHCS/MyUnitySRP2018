@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: SRPUnlitRedGreen
+  m_Name: SRPUnlitGreen
   m_Shader: {fileID: 4800000, guid: adda63e9594a4ba49b74436b9f8d6f78, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
