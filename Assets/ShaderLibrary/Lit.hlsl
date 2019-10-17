@@ -9,14 +9,20 @@
 	
 	CBUFFER_START(UnityPerDraw)
 	float4x4 unity_ObjectToWorld;
+	//x 组件包含第二种方法使用时的偏移量
+	//y 物体收到几个光的影响
+	float4 unity_LightIndicesOffsetAndCount;
+	float4 unity_4LightIndices0, unity_4LightIndices1;
 	CBUFFER_END
 	
 	
-	#define MAX_VISIBLE_LIGHTS 4
+	#define MAX_VISIBLE_LIGHTS 16
 	
 	CBUFFER_START(_LightBuffer)
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLIghtSpotDirecitons[MAX_VISIBLE_LIGHTS];
 	CBUFFER_END
 	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
@@ -41,6 +47,7 @@
 		float4 clipPos: SV_POSITION;
 		float3 normal: TEXCOORD0;
 		float3 worldPos: TEXCOORD1;
+		float3 vertexLighting: TEXCOORD2;
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -48,14 +55,27 @@
 	{
 		float3 lightColor = _VisibleLightColors[index].rgb;
 		float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
+		float4 lightAttenuation = _VisibleLightAttenuations[index];
+		float3 spotDirection = _VisibleLIghtSpotDirecitons[index].xyz;
+		
 		//平行光w是0
 		float3 lightVector = lightPositionOrDirection.xyz - worldPos * lightPositionOrDirection.w;
 		float3 lightDirection = normalize(lightVector);
 		float diffuse = saturate(dot(normal, lightDirection));
 		
+		//光照范围(range)阀值衰减
+		float rangeFade = dot(lightVector, lightVector) * lightAttenuation.x;
+		rangeFade = saturate(1.0 - rangeFade * rangeFade);
+		rangeFade *= rangeFade;
+		
+		float spotFade = dot(spotDirection, lightDirection);
+		spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);
+		spotFade *= spotFade;
+		
 		//平行光距离是1 所以被除以还是原来的值
 		float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
-		diffuse /= distanceSqr;
+		//光照距离衰减
+		diffuse *= spotFade * rangeFade / distanceSqr;
 		
 		return diffuse * lightColor;
 	}
@@ -69,6 +89,15 @@
 		output.clipPos = mul(unity_MatrixVP, worldPos);
 		output.worldPos = worldPos;
 		output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
+		
+		//第二组光因为影响不严重 所以可以在顶点进行计算
+		output.vertexLighting = 0;
+		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 8); i ++)
+		{
+			int lightIndex = unity_4LightIndices1[i - 4];
+			output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos);
+		}
+		
 		return output;
 	}
 	
@@ -80,10 +109,11 @@
 		
 		//float3 diffuseLight = saturate(dot(input.normal, float3(0, 1, 0)));
 		
-		float3 diffuseLight = 0;
-		for (int i = 0; i < MAX_VISIBLE_LIGHTS; i ++)
+		float3 diffuseLight = input.vertexLighting;
+		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)
 		{
-			diffuseLight += DiffuseLight(i, input.normal, input.worldPos);
+			int lightIndex = unity_4LightIndices0[i];
+			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos);
 		}
 		
 		float3 color = diffuseLight * albedo;;
