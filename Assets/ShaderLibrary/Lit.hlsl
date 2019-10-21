@@ -22,7 +22,7 @@
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];
-	float4 _VisibleLIghtSpotDirecitons[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];
 	CBUFFER_END
 	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
@@ -56,7 +56,7 @@
 		float3 lightColor = _VisibleLightColors[index].rgb;
 		float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
 		float4 lightAttenuation = _VisibleLightAttenuations[index];
-		float3 spotDirection = _VisibleLIghtSpotDirecitons[index].xyz;
+		float3 spotDirection = _VisibleLightSpotDirections[index].xyz;
 		
 		//平行光w是0
 		float3 lightVector = lightPositionOrDirection.xyz - worldPos * lightPositionOrDirection.w;
@@ -69,14 +69,15 @@
 		rangeFade *= rangeFade;
 		
 		float spotFade = dot(spotDirection, lightDirection);
+
 		spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);
+
 		spotFade *= spotFade;
 		
 		//平行光距离是1 所以被除以还是原来的值
 		float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
 		//光照距离衰减
 		diffuse *= spotFade * rangeFade / distanceSqr;
-		
 		return diffuse * lightColor;
 	}
 	

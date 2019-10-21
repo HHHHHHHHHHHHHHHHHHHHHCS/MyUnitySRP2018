@@ -34,7 +34,7 @@ public class MyPipeline : RenderPipeline
     private Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
     private Vector4[] visiblelightDirectionsOrPositions = new Vector4[maxVisibleLights];
     Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
-    private Vector4[] visibleLIghtSpotDirections = new Vector4[maxVisibleLights];
+    private Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];
 
     private RenderTexture shadowMap;
 
@@ -104,7 +104,7 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.SetGlobalVectorArray(visibleLightColorsID, visibleLightColors);
         cameraBuffer.SetGlobalVectorArray(visibleLightDirectionsOrPositionsID, visiblelightDirectionsOrPositions);
         cameraBuffer.SetGlobalVectorArray(visibleLightAttenuationsID, visibleLightAttenuations);
-        cameraBuffer.SetGlobalVectorArray(visibleLightSpotDirectionsID, visibleLightAttenuations);
+        cameraBuffer.SetGlobalVectorArray(visibleLightSpotDirectionsID, visibleLightSpotDirections);
 
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
@@ -215,7 +215,7 @@ public class MyPipeline : RenderPipeline
                     v.x = -v.x;
                     v.y = -v.y;
                     v.z = -v.z;
-                    visibleLIghtSpotDirections[i] = v;
+                    visibleLightSpotDirections[i] = v;
 
                     float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
                     //灯光角的一半   外面不显示
@@ -257,6 +257,18 @@ public class MyPipeline : RenderPipeline
         shadowBuffer.BeginSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
+
+        Matrix4x4 viewMatrix, projectionMatrix;
+        ShadowSplitData splitData;
+        cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+            0, out viewMatrix, out projectionMatrix, out splitData);
+
+        shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+        context.ExecuteCommandBuffer(shadowBuffer);
+        shadowBuffer.Clear();
+
+        var shadowSettings = new DrawShadowsSettings(cull, 0);
+        context.DrawShadows(ref shadowSettings);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
