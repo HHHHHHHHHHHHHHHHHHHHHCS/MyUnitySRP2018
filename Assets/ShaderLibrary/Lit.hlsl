@@ -116,7 +116,7 @@
 			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos);
 		}
 		
-		float3 color = diffuseLight * albedo;;
+		float3 color = diffuseLight * albedo;
 		return float4(color, 1);
 	}
 	

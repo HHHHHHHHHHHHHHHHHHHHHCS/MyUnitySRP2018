@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
@@ -16,6 +17,15 @@ public class MyPipeline : RenderPipeline
     private static int visibleLightAttenuationsID = Shader.PropertyToID("_VisibleLightAttenuations");
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
 
+    private readonly CommandBuffer cameraBuffer = new CommandBuffer()
+    {
+        name = "Render Camera"
+    };
+
+    private readonly CommandBuffer shadowBuffer = new CommandBuffer()
+    {
+        name = "Render Shadows"
+    };
 
     private CullResults cull;
     private Material errorMaterial;
@@ -26,10 +36,8 @@ public class MyPipeline : RenderPipeline
     Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
     private Vector4[] visibleLIghtSpotDirections = new Vector4[maxVisibleLights];
 
-    private readonly CommandBuffer cameraBuffer = new CommandBuffer()
-    {
-        name = "Render Camera"
-    };
+    private RenderTexture shadowMap;
+
 
     public MyPipeline(bool dynamicBatching, bool instancing)
     {
@@ -74,8 +82,9 @@ public class MyPipeline : RenderPipeline
         //CullResults cull = CullResults.Cull(ref cullingParameters, context);
         CullResults.Cull(ref cullingParameters, context, ref cull);
 
-        context.SetupCameraProperties(camera);
+        RendererShadows(context);
 
+        context.SetupCameraProperties(camera);
 
         CameraClearFlags clearFlags = camera.clearFlags;
         cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0
@@ -134,6 +143,12 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.Clear();
 
         context.Submit();
+
+        if (shadowMap)
+        {
+            RenderTexture.ReleaseTemporary(shadowMap);
+            shadowMap = null;
+        }
     }
 
     [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
@@ -227,5 +242,24 @@ public class MyPipeline : RenderPipeline
         }
 
         cull.SetLightIndexMap(lightIndices);
+    }
+
+    private void RendererShadows(ScriptableRenderContext context)
+    {
+        shadowMap = RenderTexture.GetTemporary(
+            512, 512, 16, RenderTextureFormat.Shadowmap);
+        shadowMap.filterMode = FilterMode.Bilinear;
+        shadowMap.wrapMode = TextureWrapMode.Clamp;
+
+        CoreUtils.SetRenderTarget(shadowBuffer, shadowMap
+            , RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
+            , ClearFlag.Depth);
+        shadowBuffer.BeginSample("Render Shadows");
+        context.ExecuteCommandBuffer(shadowBuffer);
+        shadowBuffer.Clear();
+
+        shadowBuffer.EndSample("Render Shadows");
+        context.ExecuteCommandBuffer(shadowBuffer);
+        shadowBuffer.Clear();
     }
 }
