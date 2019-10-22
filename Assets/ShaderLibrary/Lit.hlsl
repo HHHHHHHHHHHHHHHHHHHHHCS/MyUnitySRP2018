@@ -25,8 +25,16 @@
 	float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];
 	CBUFFER_END
 	
-	#define UNITY_MATRIX_M unity_ObjectToWorld
+	CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrix;
+	CBUFFER_END
 	
+	//其实跟texture2D差不多 , 但是OPENGL2.0 不支持阴影深度图比较   但是我们不用支持OPENGL2.0
+	TEXTURE2D_SHADOW(_ShadowMap);
+	//采样器比较方法  名字规定是sampler+贴图name
+	SAMPLER_CMP(sampler_ShadowMap);
+	
+	#define UNITY_MATRIX_M unity_ObjectToWorld
 	
 	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
@@ -51,7 +59,16 @@
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
-	float3 DiffuseLight(int index, float3 normal, float3 worldPos)
+	float ShadowAttenuation(float3 worldPos)
+	{
+		float4 shadowPos = mul(_WorldToShadowMatrix, float4(worldPos, 1.0));
+		//得到NDC空间
+		shadowPos.xyz /= shadowPos.w;
+		//采样阴影贴图 (贴图,比较方法,当前物体在灯光矩阵的位置)
+		return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+	}
+	
+	float3 DiffuseLight(int index, float3 normal, float3 worldPos, float shadowAttenuation)
 	{
 		float3 lightColor = _VisibleLightColors[index].rgb;
 		float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
@@ -69,15 +86,15 @@
 		rangeFade *= rangeFade;
 		
 		float spotFade = dot(spotDirection, lightDirection);
-
+		
 		spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);
-
+		
 		spotFade *= spotFade;
 		
 		//平行光距离是1 所以被除以还是原来的值
 		float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
 		//光照距离衰减
-		diffuse *= spotFade * rangeFade / distanceSqr;
+		diffuse *= shadowAttenuation * spotFade * rangeFade / distanceSqr;
 		return diffuse * lightColor;
 	}
 	
@@ -96,7 +113,8 @@
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 8); i ++)
 		{
 			int lightIndex = unity_4LightIndices1[i - 4];
-			output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos);
+			//顶点光 为了减少计算 直接不启用阴影
+			output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos, 1);
 		}
 		
 		return output;
@@ -114,7 +132,8 @@
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)
 		{
 			int lightIndex = unity_4LightIndices0[i];
-			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos);
+			float shadowAttenuation = ShadowAttenuation(input.worldPos);
+			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos, shadowAttenuation);
 		}
 		
 		float3 color = diffuseLight * albedo;

@@ -16,6 +16,8 @@ public class MyPipeline : RenderPipeline
     private static int visibleLightDirectionsOrPositionsID = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
     private static int visibleLightAttenuationsID = Shader.PropertyToID("_VisibleLightAttenuations");
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
+    private static int shadowMapID = Shader.PropertyToID("_ShadowMap");
+    private static int worldToShadowMatrixID = Shader.PropertyToID("_WorldToShadowMatrix");
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
@@ -269,6 +271,31 @@ public class MyPipeline : RenderPipeline
 
         var shadowSettings = new DrawShadowsSettings(cull, 0);
         context.DrawShadows(ref shadowSettings);
+
+        //如果Z是翻转的
+        if (SystemInfo.usesReversedZBuffer)
+        {
+            projectionMatrix.m20 = -projectionMatrix.m20;
+            projectionMatrix.m21 = -projectionMatrix.m21;
+            projectionMatrix.m22 = -projectionMatrix.m22;
+            projectionMatrix.m23 = -projectionMatrix.m23;
+        }
+
+        //原来的位置是 [-1,+1]
+        //用这个矩阵 先缩放 0.5 在偏移 +0.5
+        //var scaleOffset = Matrix4x4.TRS(
+        //    Vector3.one * 0.5f, Quaternion.identity, Vector3.one * 0.5f);
+        //上面的运算结果就是下面这个
+        var scaleOffset = Matrix4x4.identity;
+        scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
+        scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
+
+
+        //从右到左乘法
+        Matrix4x4 worldToShadowMatrix = scaleOffset * (projectionMatrix * viewMatrix);
+        shadowBuffer.SetGlobalMatrix(worldToShadowMatrixID, worldToShadowMatrix);
+
+        shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
