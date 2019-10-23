@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Assertions;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using Conditional = System.Diagnostics.ConditionalAttribute;
@@ -11,12 +12,17 @@ public class MyPipeline : RenderPipeline
 {
     private const int maxVisibleLights = 16;
 
+    private const string shadowSoftKeyword = "_SHADOWS_SOFT";
+
     private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
     private static int visibleLightDirectionsOrPositionsID = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
     private static int visibleLightAttenuationsID = Shader.PropertyToID("_VisibleLightAttenuations");
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
     private static int shadowMapID = Shader.PropertyToID("_ShadowMap");
+    private static int shadowBiasID = Shader.PropertyToID("_ShadowBias");
+    private static int shadowStrengthID = Shader.PropertyToID("_ShadowStrength");
+    private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
     private static int worldToShadowMatrixID = Shader.PropertyToID("_WorldToShadowMatrix");
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
@@ -39,9 +45,9 @@ public class MyPipeline : RenderPipeline
     private Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];
 
     private RenderTexture shadowMap;
+    private int shadowMapSize;
 
-
-    public MyPipeline(bool dynamicBatching, bool instancing)
+    public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -55,6 +61,8 @@ public class MyPipeline : RenderPipeline
         {
             drawFlags |= DrawRendererFlags.EnableInstancing;
         }
+
+        shadowMapSize = _shadowMapSize;
     }
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
@@ -84,7 +92,7 @@ public class MyPipeline : RenderPipeline
         //CullResults cull = CullResults.Cull(ref cullingParameters, context);
         CullResults.Cull(ref cullingParameters, context, ref cull);
 
-        RendererShadows(context);
+        RenderShadows(context);
 
         context.SetupCameraProperties(camera);
 
@@ -111,7 +119,9 @@ public class MyPipeline : RenderPipeline
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
 
-
+        //如果Pass未指定LightMode，Unity会自动将其设置为SRPDefaultUnlit
+        //由于CSharp脚本中注册了SRPDefaultUnlit这种LightMode，所以这个Pass也会被渲染出来。
+        //如果手动注释掉对SRPDefaultUnlit注册的代码，那么这个Pass就不会被渲染。
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"))
         {
             flags = drawFlags,
@@ -246,10 +256,10 @@ public class MyPipeline : RenderPipeline
         cull.SetLightIndexMap(lightIndices);
     }
 
-    private void RendererShadows(ScriptableRenderContext context)
+    private void RenderShadows(ScriptableRenderContext context)
     {
         shadowMap = RenderTexture.GetTemporary(
-            512, 512, 16, RenderTextureFormat.Shadowmap);
+            shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap);
         shadowMap.filterMode = FilterMode.Bilinear;
         shadowMap.wrapMode = TextureWrapMode.Clamp;
 
@@ -266,6 +276,8 @@ public class MyPipeline : RenderPipeline
             0, out viewMatrix, out projectionMatrix, out splitData);
 
         shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+        shadowBuffer.SetGlobalFloat(shadowBiasID, cull.visibleLights[0].light.shadowBias);
+        shadowBuffer.SetGlobalFloat(shadowStrengthID, cull.visibleLights[0].light.shadowStrength);
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
@@ -296,6 +308,22 @@ public class MyPipeline : RenderPipeline
         shadowBuffer.SetGlobalMatrix(worldToShadowMatrixID, worldToShadowMatrix);
 
         shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
+
+        float invShadowMapSize = 1f / shadowMapSize;
+        shadowBuffer.SetGlobalVector(shadowMapSizeID
+            , new Vector4(invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize));
+
+        //if (cull.visibleLights[0].light.shadows == LightShadows.Soft)
+        //{
+        //    shadowBuffer.EnableShaderKeyword(shadowSoftKeyword);
+        //}
+        //else
+        //{
+        //    shadowBuffer.DisableShaderKeyword(shadowSoftKeyword);
+        //}
+        //下面是上面的封装
+        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword,
+            cull.visibleLights[0].light.shadows == LightShadows.Soft);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
