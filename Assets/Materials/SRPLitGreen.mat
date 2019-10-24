@@ -9,7 +9,7 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: SRPLitGreen
   m_Shader: {fileID: 4800000, guid: fb525af7f9d3ce742abf45e30a517946, type: 3}
-  m_ShaderKeywords: 
+  m_ShaderKeywords: _SHADOWS_SOFT
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0

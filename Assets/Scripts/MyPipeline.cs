@@ -21,9 +21,9 @@ public class MyPipeline : RenderPipeline
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
     private static int shadowMapID = Shader.PropertyToID("_ShadowMap");
     private static int shadowBiasID = Shader.PropertyToID("_ShadowBias");
-    private static int shadowStrengthID = Shader.PropertyToID("_ShadowStrength");
+    private static int shadowDataID = Shader.PropertyToID("_ShadowData");
     private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
-    private static int worldToShadowMatrixID = Shader.PropertyToID("_WorldToShadowMatrix");
+    private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
@@ -46,6 +46,9 @@ public class MyPipeline : RenderPipeline
 
     private RenderTexture shadowMap;
     private int shadowMapSize;
+    private Vector4[] shadowData = new Vector4[maxVisibleLights];
+    private Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
+
 
     public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize)
     {
@@ -92,7 +95,17 @@ public class MyPipeline : RenderPipeline
         //CullResults cull = CullResults.Cull(ref cullingParameters, context);
         CullResults.Cull(ref cullingParameters, context, ref cull);
 
-        RenderShadows(context);
+        if (cull.visibleLights.Count > 0)
+        {
+            ConfigureLights();
+            RenderShadows(context);
+        }
+        else
+        {
+            cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
+        }
+
+        ConfigureLights();
 
         context.SetupCameraProperties(camera);
 
@@ -100,14 +113,6 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0
             , (clearFlags & CameraClearFlags.Color) != 0, Color.clear);
 
-        if (cull.visibleLights.Count > 0)
-        {
-            ConfigureLights();
-        }
-        else
-        {
-            cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
-        }
 
         cameraBuffer.BeginSample("Render Camera");
 
@@ -119,9 +124,10 @@ public class MyPipeline : RenderPipeline
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
 
+        //我们必须通过提供相机和一个shader pass 作为draw setting的构造函数的参数。
+        //这个相机用来设置排序和裁剪层级(culling layers),
+        //而shader pass 控制使用那个shader pass进行渲染。
         //如果Pass未指定LightMode，Unity会自动将其设置为SRPDefaultUnlit
-        //由于CSharp脚本中注册了SRPDefaultUnlit这种LightMode，所以这个Pass也会被渲染出来。
-        //如果手动注释掉对SRPDefaultUnlit注册的代码，那么这个Pass就不会被渲染。
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"))
         {
             flags = drawFlags,
@@ -192,13 +198,14 @@ public class MyPipeline : RenderPipeline
 
     private void ConfigureLights()
     {
-        Vector4 attenuation = Vector4.zero;
-        attenuation.w = 1f;
-
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
             VisibleLight light = cull.visibleLights[i];
             visibleLightColors[i] = light.finalColor;
+
+            Vector4 attenuation = Vector4.zero;
+            attenuation.w = 1f;
+            Vector4 shadow = Vector4.zero;
 
             if (light.lightType == LightType.Directional)
             {
@@ -240,10 +247,23 @@ public class MyPipeline : RenderPipeline
                     float angleRange = Mathf.Max(innerCos - outerCos, 0.0001f);
                     attenuation.z = 1f / angleRange;
                     attenuation.w = -outerCos * attenuation.z;
+
+                    Light shadowLight = light.light;
+                    Bounds shadowBounds;
+                    if (shadowLight.shadows != LightShadows.None)
+                    {
+                        //这个剔除 如果 没有阴影接受者  或者阴影接受者不再视野内
+                        if (cull.GetShadowCasterBounds(i, out shadowBounds))
+                        {
+                            shadow.x = shadowLight.shadowStrength;
+                            shadow.y = shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+                        }
+                    }
                 }
             }
 
             visibleLightAttenuations[i] = attenuation;
+            shadowData[i] = shadow;
         }
 
         //剔除额外的光
@@ -258,6 +278,11 @@ public class MyPipeline : RenderPipeline
 
     private void RenderShadows(ScriptableRenderContext context)
     {
+        //虽然也可以用tex2DArray 但是不支持一些老机型手机
+        //所以这里用图片分割成4*4块
+        float tileSize = shadowMapSize / 4;
+        Rect tileViewport = new Rect(0f, 0f, tileSize, tileSize);
+
         shadowMap = RenderTexture.GetTemporary(
             shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap);
         shadowMap.filterMode = FilterMode.Bilinear;
@@ -270,50 +295,93 @@ public class MyPipeline : RenderPipeline
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
-        Matrix4x4 viewMatrix, projectionMatrix;
-        ShadowSplitData splitData;
-        cull.ComputeSpotShadowMatricesAndCullingPrimitives(
-            0, out viewMatrix, out projectionMatrix, out splitData);
-
-        shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
-        shadowBuffer.SetGlobalFloat(shadowBiasID, cull.visibleLights[0].light.shadowBias);
-        shadowBuffer.SetGlobalFloat(shadowStrengthID, cull.visibleLights[0].light.shadowStrength);
-        context.ExecuteCommandBuffer(shadowBuffer);
-        shadowBuffer.Clear();
-
-        var shadowSettings = new DrawShadowsSettings(cull, 0);
-        context.DrawShadows(ref shadowSettings);
-
-        //如果Z是翻转的
-        if (SystemInfo.usesReversedZBuffer)
-        {
-            projectionMatrix.m20 = -projectionMatrix.m20;
-            projectionMatrix.m21 = -projectionMatrix.m21;
-            projectionMatrix.m22 = -projectionMatrix.m22;
-            projectionMatrix.m23 = -projectionMatrix.m23;
-        }
-
         //原来的位置是 [-1,+1]
         //用这个矩阵 先缩放 0.5 在偏移 +0.5
         //var scaleOffset = Matrix4x4.TRS(
         //    Vector3.one * 0.5f, Quaternion.identity, Vector3.one * 0.5f);
         //上面的运算结果就是下面这个
+        //用于偏移worldToShadow 摄像机的的是中点  但是我们物体转到过去的时候是左下角所以要偏移
         var scaleOffset = Matrix4x4.identity;
         scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
         scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
 
+        //用于偏移worldToShadow 切图    偏移到正确的阴影切图块
+        var tileMatrix = Matrix4x4.identity;
+        tileMatrix.m00 = tileMatrix.m11 = scaleOffset.m22 = 0.25f;
 
-        //从右到左乘法
-        Matrix4x4 worldToShadowMatrix = scaleOffset * (projectionMatrix * viewMatrix);
-        shadowBuffer.SetGlobalMatrix(worldToShadowMatrixID, worldToShadowMatrix);
+        bool haveSoftShadow = false;
 
+        for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
+        {
+            //剔除没有强度的 或者不需要的
+            if (shadowData[i].x <= 0f)
+            {
+                continue;
+            }
+
+            Matrix4x4 viewMatrix, projectionMatrix;
+            ShadowSplitData splitData;
+
+            //是否能生成有效的矩阵
+            if (!cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+                i, out viewMatrix, out projectionMatrix, out splitData))
+            {
+                shadowData[i].x = 0f;
+                continue;
+            }
+
+            //设置渲染到贴图上的区域(起始位置和大小)
+            float tileOffsetX = i % 4;
+            float tileOffsetY = i / 4;
+            tileViewport.x = tileOffsetX * tileSize;
+            tileViewport.y = tileOffsetY * tileSize;
+            shadowBuffer.SetViewport(tileViewport);
+            //启动裁剪  不然采样阴影贴图边界的时候会受到另外一边的贴图的值影响
+            //尤其是软阴影的时候
+            shadowBuffer.EnableScissorRect(new Rect(
+                tileViewport.x + 4f, tileViewport.y + 4f,
+                tileSize - 8f, tileSize - 8f
+            ));
+            shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            shadowBuffer.SetGlobalFloat(shadowBiasID, cull.visibleLights[i].light.shadowBias);
+            shadowBuffer.SetGlobalVectorArray(shadowDataID, shadowData);
+            context.ExecuteCommandBuffer(shadowBuffer);
+            shadowBuffer.Clear();
+
+            var shadowSettings = new DrawShadowsSettings(cull, i);
+            context.DrawShadows(ref shadowSettings);
+
+            //如果Z是翻转的
+            if (SystemInfo.usesReversedZBuffer)
+            {
+                projectionMatrix.m20 = -projectionMatrix.m20;
+                projectionMatrix.m21 = -projectionMatrix.m21;
+                projectionMatrix.m22 = -projectionMatrix.m22;
+                projectionMatrix.m23 = -projectionMatrix.m23;
+            }
+
+
+            //从右到左乘法
+            worldToShadowMatrices[i] = scaleOffset * (projectionMatrix * viewMatrix);
+
+            scaleOffset.m03 = tileOffsetX * 0.25f;
+            scaleOffset.m13 = tileOffsetY * 0.25f;
+
+            worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];
+
+            haveSoftShadow |= cull.visibleLights[i].light.shadows == LightShadows.Soft;
+        }
+
+        //渲染完成禁用裁剪   不然平常渲染也会收到影响
+        shadowBuffer.DisableScissorRect();
         shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
 
         float invShadowMapSize = 1f / shadowMapSize;
         shadowBuffer.SetGlobalVector(shadowMapSizeID
             , new Vector4(invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize));
+        shadowBuffer.SetGlobalMatrixArray(worldToShadowMatricesID, worldToShadowMatrices);
 
-        //if (cull.visibleLights[0].light.shadows == LightShadows.Soft)
+        //if (haveSoftShadow == LightShadows.Soft)
         //{
         //    shadowBuffer.EnableShaderKeyword(shadowSoftKeyword);
         //}
@@ -322,8 +390,7 @@ public class MyPipeline : RenderPipeline
         //    shadowBuffer.DisableShaderKeyword(shadowSoftKeyword);
         //}
         //下面是上面的封装
-        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword,
-            cull.visibleLights[0].light.shadows == LightShadows.Soft);
+        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword, haveSoftShadow);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
