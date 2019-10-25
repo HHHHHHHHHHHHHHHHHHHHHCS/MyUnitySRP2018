@@ -62,8 +62,34 @@
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
+	float HardShadowAttenuation(float4 shadowPos)
+	{
+		return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+	}
+	
+	float SoftShadowAttenuation(float4 shadowPos)
+	{
+		real tentWeights[9];
+		real2 tentUVs[9];
+		SampleShadow_ComputeSamples_Tent_5x5(
+			_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
+		);
+		float attenuation = 0;
+		for (int i = 0; i < 9; i ++)
+		{
+			attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(
+				_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)
+			);
+		}
+		return attenuation;
+	}
+	
 	float ShadowAttenuation(int index, float3 worldPos)
 	{
+		#if !defined(_SHADOWS_HARD) && !defined(_SHADOWS_SOFT)
+			return 1.0;
+		#endif
+		
 		if (_ShadowData[index].x <= 0)
 		{
 			return 1.0;
@@ -73,26 +99,25 @@
 		//得到NDC空间
 		shadowPos.xyz /= shadowPos.w;
 		//采样阴影贴图 (贴图,比较方法,当前物体在灯光矩阵的位置)
+		
 		float attenuation;
 		
-		if (_ShadowData[index].y == 0)
-		{
-			attenuation = SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
-		}
-		else
-		{
-			real  tentWeights[9];
-			real2 tentUVs[9];
-			SampleShadow_ComputeSamples_Tent_5x5(
-				_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
-			);
-			
-			attenuation = 0;
-			for (int i = 0; i < 9; i ++)
-			{
-				attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z));
-			}
-		}
+		#if defined(_SHADOWS_HARD)
+			#if defined(_SHADOWS_SOFT)
+				if (_ShadowData[index].y == 0)
+				{
+					attenuation = HardShadowAttenuation(shadowPos);
+				}
+				else
+				{
+					attenuation = SoftShadowAttenuation(shadowPos);
+				}
+			#else
+				attenuation = HardShadowAttenuation(shadowPos);
+			#endif
+		#else
+			attenuation = SoftShadowAttenuation(shadowPos);
+		#endif
 		
 		return lerp(1, attenuation, _ShadowData[index].x);
 	}
@@ -139,7 +164,7 @@
 		
 		//第二组光因为影响不严重 所以可以在顶点进行计算
 		output.vertexLighting = 0;
-		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 8); i ++)
+		for (int i = 4; i < min(unity_LightIndicesOffsetAndCount.y, 8); i ++)
 		{
 			int lightIndex = unity_4LightIndices1[i - 4];
 			//顶点光 为了减少计算 直接不启用阴影
@@ -161,7 +186,7 @@
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)
 		{
 			int lightIndex = unity_4LightIndices0[i];
-			float shadowAttenuation = ShadowAttenuation(i, input.worldPos);
+			float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);
 			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos, shadowAttenuation);
 		}
 		

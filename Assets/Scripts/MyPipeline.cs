@@ -13,6 +13,7 @@ public class MyPipeline : RenderPipeline
     private const int maxVisibleLights = 16;
 
     private const string shadowSoftKeyword = "_SHADOWS_SOFT";
+    private const string shadowHardKeyword = "_SHADOWS_HARD";
 
     private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
@@ -48,7 +49,7 @@ public class MyPipeline : RenderPipeline
     private int shadowMapSize;
     private Vector4[] shadowData = new Vector4[maxVisibleLights];
     private Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
-
+    private int shadowTileCount;
 
     public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize)
     {
@@ -98,14 +99,22 @@ public class MyPipeline : RenderPipeline
         if (cull.visibleLights.Count > 0)
         {
             ConfigureLights();
-            RenderShadows(context);
+            if (shadowTileCount > 0)
+            {
+                RenderShadows(context);
+            }
+            else
+            {
+                cameraBuffer.DisableShaderKeyword(shadowHardKeyword);
+                cameraBuffer.DisableShaderKeyword(shadowSoftKeyword);
+            }
         }
         else
         {
             cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
+            cameraBuffer.DisableShaderKeyword(shadowHardKeyword);
+            cameraBuffer.DisableShaderKeyword(shadowSoftKeyword);
         }
-
-        ConfigureLights();
 
         context.SetupCameraProperties(camera);
 
@@ -131,12 +140,12 @@ public class MyPipeline : RenderPipeline
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"))
         {
             flags = drawFlags,
-            sorting = {flags = SortFlags.CommonOpaque},
             rendererConfiguration =
                 cull.visibleLights.Count > 0
                     ? RendererConfiguration.PerObjectLightIndices8
                     : RendererConfiguration.None
         };
+        drawSettings.sorting.flags = SortFlags.CommonOpaque;
         //因为 Unity 更喜欢将对象空间化地分组以减少overdraw
         var filterSettings = new FilterRenderersSettings(true)
         {
@@ -198,6 +207,7 @@ public class MyPipeline : RenderPipeline
 
     private void ConfigureLights()
     {
+        shadowTileCount = 0;
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
             VisibleLight light = cull.visibleLights[i];
@@ -255,6 +265,7 @@ public class MyPipeline : RenderPipeline
                         //这个剔除 如果 没有阴影接受者  或者阴影接受者不再视野内
                         if (cull.GetShadowCasterBounds(i, out shadowBounds))
                         {
+                            shadowTileCount += 1;
                             shadow.x = shadowLight.shadowStrength;
                             shadow.y = shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
                         }
@@ -266,21 +277,44 @@ public class MyPipeline : RenderPipeline
             shadowData[i] = shadow;
         }
 
-        //剔除额外的光
-        int[] lightIndices = cull.GetLightIndexMap();
-        for (int i = maxVisibleLights; i < cull.visibleLights.Count; i++)
-        {
-            lightIndices[i] = -1;
-        }
 
-        cull.SetLightIndexMap(lightIndices);
+        if (cull.visibleLights.Count > maxVisibleLights)
+        {
+            //剔除额外的光
+            int[] lightIndices = cull.GetLightIndexMap();
+            for (int i = maxVisibleLights; i < cull.visibleLights.Count; i++)
+            {
+                lightIndices[i] = -1;
+            }
+
+            cull.SetLightIndexMap(lightIndices);
+        }
     }
 
     private void RenderShadows(ScriptableRenderContext context)
     {
+        int split;
+        if (shadowTileCount <= 1)
+        {
+            split = 1;
+        }
+        else if (shadowTileCount <= 4)
+        {
+            split = 2;
+        }
+        else if (shadowTileCount <= 9)
+        {
+            split = 3;
+        }
+        else
+        {
+            split = 4;
+        }
+
         //虽然也可以用tex2DArray 但是不支持一些老机型手机
         //所以这里用图片分割成4*4块
-        float tileSize = shadowMapSize / 4;
+        float tileSize = shadowMapSize / split;
+        float tileScale = 1f / split;
         Rect tileViewport = new Rect(0f, 0f, tileSize, tileSize);
 
         shadowMap = RenderTexture.GetTemporary(
@@ -307,10 +341,11 @@ public class MyPipeline : RenderPipeline
 
         //用于偏移worldToShadow 切图    偏移到正确的阴影切图块
         var tileMatrix = Matrix4x4.identity;
-        tileMatrix.m00 = tileMatrix.m11 = scaleOffset.m22 = 0.25f;
+        tileMatrix.m00 = tileMatrix.m11 = tileScale;
 
-        bool haveSoftShadow = false;
-
+        int tileIndex = 0;
+        bool hardShadows = false;
+        bool softShadows = false;
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
             //剔除没有强度的 或者不需要的
@@ -331,20 +366,24 @@ public class MyPipeline : RenderPipeline
             }
 
             //设置渲染到贴图上的区域(起始位置和大小)
-            float tileOffsetX = i % 4;
-            float tileOffsetY = i / 4;
+            float tileOffsetX = tileIndex % split;
+            float tileOffsetY = tileIndex / split;
             tileViewport.x = tileOffsetX * tileSize;
             tileViewport.y = tileOffsetY * tileSize;
-            shadowBuffer.SetViewport(tileViewport);
-            //启动裁剪  不然采样阴影贴图边界的时候会受到另外一边的贴图的值影响
-            //尤其是软阴影的时候
-            shadowBuffer.EnableScissorRect(new Rect(
-                tileViewport.x + 4f, tileViewport.y + 4f,
-                tileSize - 8f, tileSize - 8f
-            ));
+
+            if (split > 1)
+            {
+                shadowBuffer.SetViewport(tileViewport);
+                //启动裁剪  不然采样阴影贴图边界的时候会受到另外一边的贴图的值影响
+                //尤其是软阴影的时候
+                shadowBuffer.EnableScissorRect(new Rect(
+                    tileViewport.x + 4f, tileViewport.y + 4f,
+                    tileSize - 8f, tileSize - 8f
+                ));
+            }
+
             shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
             shadowBuffer.SetGlobalFloat(shadowBiasID, cull.visibleLights[i].light.shadowBias);
-            shadowBuffer.SetGlobalVectorArray(shadowDataID, shadowData);
             context.ExecuteCommandBuffer(shadowBuffer);
             shadowBuffer.Clear();
 
@@ -364,23 +403,38 @@ public class MyPipeline : RenderPipeline
             //从右到左乘法
             worldToShadowMatrices[i] = scaleOffset * (projectionMatrix * viewMatrix);
 
-            scaleOffset.m03 = tileOffsetX * 0.25f;
-            scaleOffset.m13 = tileOffsetY * 0.25f;
 
-            worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];
+            if (split > 1)
+            {
+                tileMatrix.m03 = tileOffsetX * tileScale;
+                tileMatrix.m13 = tileOffsetY * tileScale;
+                worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];
+            }
 
-            haveSoftShadow |= cull.visibleLights[i].light.shadows == LightShadows.Soft;
+            if (shadowData[i].y <= 0f)
+            {
+                hardShadows = true;
+            }
+            else
+            {
+                softShadows = true;
+            }
+
+            tileIndex += 1;
         }
 
-        //渲染完成禁用裁剪   不然平常渲染也会收到影响
-        shadowBuffer.DisableScissorRect();
-        shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
+        if (split > 1)
+        {
+            //渲染完成禁用裁剪   不然平常渲染也会收到影响
+            shadowBuffer.DisableScissorRect();
+        }
 
+        shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
+        shadowBuffer.SetGlobalVectorArray(shadowDataID, shadowData);
+        shadowBuffer.SetGlobalMatrixArray(worldToShadowMatricesID, worldToShadowMatrices);
         float invShadowMapSize = 1f / shadowMapSize;
         shadowBuffer.SetGlobalVector(shadowMapSizeID
             , new Vector4(invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize));
-        shadowBuffer.SetGlobalMatrixArray(worldToShadowMatricesID, worldToShadowMatrices);
-
         //if (haveSoftShadow == LightShadows.Soft)
         //{
         //    shadowBuffer.EnableShaderKeyword(shadowSoftKeyword);
@@ -390,7 +444,8 @@ public class MyPipeline : RenderPipeline
         //    shadowBuffer.DisableShaderKeyword(shadowSoftKeyword);
         //}
         //下面是上面的封装
-        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword, haveSoftShadow);
+        CoreUtils.SetKeyword(shadowBuffer, shadowHardKeyword, hardShadows);
+        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword, softShadows);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
