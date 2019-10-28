@@ -46,12 +46,13 @@ public class MyPipeline : RenderPipeline
     private Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];
 
     private RenderTexture shadowMap;
+    private float shadowDistance;
     private int shadowMapSize;
     private Vector4[] shadowData = new Vector4[maxVisibleLights];
     private Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
     private int shadowTileCount;
 
-    public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize)
+    public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize, float _shadowDistance)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -67,6 +68,7 @@ public class MyPipeline : RenderPipeline
         }
 
         shadowMapSize = _shadowMapSize;
+        shadowDistance = _shadowDistance;
     }
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
@@ -84,6 +86,8 @@ public class MyPipeline : RenderPipeline
         {
             return;
         }
+
+        cullingParameters.shadowDistance = Mathf.Min(shadowDistance, camera.farClipPlane);
 
 #if UNITY_EDITOR
         if (camera.cameraType == CameraType.SceneView)
@@ -132,6 +136,10 @@ public class MyPipeline : RenderPipeline
 
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
+
+        //这样就可以走SRP的SubShader 如果没有则都走
+        //Shader SubShader Tags{"RenderPipeline"="MySRPPipeline"}
+        //Shader.globalRenderPipeline = "MySRPPipeline";
 
         //我们必须通过提供相机和一个shader pass 作为draw setting的构造函数的参数。
         //这个相机用来设置排序和裁剪层级(culling layers),
@@ -227,6 +235,8 @@ public class MyPipeline : RenderPipeline
                 v.y = -v.y;
                 v.z = -v.z;
                 visiblelightDirectionsOrPositions[i] = v;
+                //z=1 是方向光
+                shadow.z = 1f;
             }
             else
             {
@@ -258,18 +268,7 @@ public class MyPipeline : RenderPipeline
                     attenuation.z = 1f / angleRange;
                     attenuation.w = -outerCos * attenuation.z;
 
-                    Light shadowLight = light.light;
-                    Bounds shadowBounds;
-                    if (shadowLight.shadows != LightShadows.None)
-                    {
-                        //这个剔除 如果 没有阴影接受者  或者阴影接受者不再视野内
-                        if (cull.GetShadowCasterBounds(i, out shadowBounds))
-                        {
-                            shadowTileCount += 1;
-                            shadow.x = shadowLight.shadowStrength;
-                            shadow.y = shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
-                        }
-                    }
+                    shadow = ConfigureShadows(i, light.light);
                 }
             }
 
@@ -357,9 +356,25 @@ public class MyPipeline : RenderPipeline
             Matrix4x4 viewMatrix, projectionMatrix;
             ShadowSplitData splitData;
 
-            //是否能生成有效的矩阵
-            if (!cull.ComputeSpotShadowMatricesAndCullingPrimitives(
-                i, out viewMatrix, out projectionMatrix, out splitData))
+            //是否能生成有效的矩阵 如果没有 x=0 表示不启用阴影
+            bool validShadows;
+
+            if (shadowData[i].z > 0f)
+            {
+                //参数 1:灯光index  2:cascadeIndex  3:cascadeCount   4:cascade 分级距离
+                //5: 分辨率   6:nearPlane 如果太近不画
+                validShadows = cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(
+                    i, 0, 1, Vector3.right, (int) tileSize
+                    , cull.visibleLights[i].light.shadowNearPlane
+                    , out viewMatrix, out projectionMatrix, out splitData);
+            }
+            else
+            {
+                validShadows = cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+                    i, out viewMatrix, out projectionMatrix, out splitData);
+            }
+
+            if (!validShadows)
             {
                 shadowData[i].x = 0f;
                 continue;
@@ -388,6 +403,8 @@ public class MyPipeline : RenderPipeline
             shadowBuffer.Clear();
 
             var shadowSettings = new DrawShadowsSettings(cull, i);
+            //用球剔除 xyz是中心点  w是半径
+            shadowSettings.splitData.cullingSphere = splitData.cullingSphere;
             context.DrawShadows(ref shadowSettings);
 
             //如果Z是翻转的
@@ -450,5 +467,23 @@ public class MyPipeline : RenderPipeline
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
+    }
+
+    private Vector4 ConfigureShadows(int lightIndex, Light shadowLight)
+    {
+        Vector4 shadow = Vector4.zero;
+        Bounds shadowBounds;
+        if (shadowLight.shadows != LightShadows.None)
+        {
+            //这个剔除 如果 没有阴影接受者  或者阴影接受者不再视野内
+            if (cull.GetShadowCasterBounds(lightIndex, out shadowBounds))
+            {
+                shadowTileCount += 1;
+                shadow.x = shadowLight.shadowStrength;
+                shadow.y = shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+            }
+        }
+
+        return shadow;
     }
 }

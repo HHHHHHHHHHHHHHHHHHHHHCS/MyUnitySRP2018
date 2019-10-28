@@ -25,8 +25,11 @@ public class MyPipelineAsset : RenderPipelineAsset
     //阴影贴图分辨率
     [SerializeField] private ShadowMapSize shadowMapSize = ShadowMapSize._1024;
 
+    //阴影的距离
+    [SerializeField] private float shadowDistance = 100f;
+
     protected override IRenderPipeline InternalCreatePipeline()
     {
-        return new MyPipeline(dynamicBatching, instancing, (int) shadowMapSize);
+        return new MyPipeline(dynamicBatching, instancing, (int) shadowMapSize, shadowDistance);
     }
 }
