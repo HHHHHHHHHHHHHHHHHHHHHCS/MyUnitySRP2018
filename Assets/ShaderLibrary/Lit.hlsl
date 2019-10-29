@@ -1,11 +1,18 @@
 #ifndef MYRP_LIT_INCLUDED
 	#define MYRP_LIT_INCLUDED
 	
+	#define MAX_VISIBLE_LIGHTS 16
+	
+	
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
 	
 	CBUFFER_START(UnityPerFrame)
 	float4x4 unity_MatrixVP;
+	CBUFFER_END
+	
+	CBUFFER_START(UnityPerCamera)
+	float3 _WorldSpaceCameraPos;
 	CBUFFER_END
 	
 	CBUFFER_START(UnityPerDraw)
@@ -16,9 +23,6 @@
 	float4 unity_4LightIndices0, unity_4LightIndices1;
 	CBUFFER_END
 	
-	
-	#define MAX_VISIBLE_LIGHTS 16
-	
 	CBUFFER_START(_LightBuffer)
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
@@ -28,14 +32,23 @@
 	
 	CBUFFER_START(_ShadowBuffer)
 	float4x4 _WorldToShadowMatrices[MAX_VISIBLE_LIGHTS];
+	float4x4 _WorldToShadowCascadeMatrices[5];
+	float4 _CascadeCullingSpheres[4];
+	//x:是否有灯光   y:是hard 还是soft 阴影  Z:主光源阴影/阴影Tile X偏移  W:阴影Tile Y偏移
 	float4 _ShadowData[MAX_VISIBLE_LIGHTS];
 	float4 _ShadowMapSize;
+	float4 _CascadedShadowMapSize;
+	float4 _GlobalShadowData;
+	float _CascadedShadowStrength;
 	CBUFFER_END
 	
 	//其实跟texture2D差不多 , 但是OPENGL2.0 不支持阴影深度图比较   但是我们不用支持OPENGL2.0
 	TEXTURE2D_SHADOW(_ShadowMap);
 	//采样器比较方法  名字规定是sampler+贴图name
 	SAMPLER_CMP(sampler_ShadowMap);
+	
+	TEXTURE2D_SHADOW(_CascadedShadowMap);
+	SAMPLER_CMP(sampler_CascadedShadowMap);
 	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
 	
@@ -62,27 +75,89 @@
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
-	float HardShadowAttenuation(float4 shadowPos)
+	float InsideCascadeCullingSphere(int index, float3 worldPos)
 	{
-		return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+		float4 s = _CascadeCullingSpheres[index];
+		return dot(worldPos - s.xyz, worldPos - s.xyz) > s.w;
 	}
 	
-	float SoftShadowAttenuation(float4 shadowPos)
+	float DistanceToCameraSqr(float3 worldPos)
+	{
+		float3 cameraToFragment = worldPos - _WorldSpaceCameraPos;
+		return dot(cameraToFragment, cameraToFragment);
+	}
+	
+	float HardShadowAttenuation(float4 shadowPos, bool cascade = false)
+	{
+		if (cascade)
+		{
+			return SAMPLE_TEXTURE2D_SHADOW(_CascadedShadowMap, sampler_CascadedShadowMap, shadowPos.xyz);
+		}
+		else
+		{
+			return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+		}
+	}
+	
+	float SoftShadowAttenuation(float4 shadowPos, bool cascade = false)
 	{
 		real tentWeights[9];
 		real2 tentUVs[9];
+		float4 size = cascade?_CascadedShadowMapSize: _ShadowMapSize;
 		SampleShadow_ComputeSamples_Tent_5x5(
-			_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
+			size, shadowPos.xy, tentWeights, tentUVs
 		);
 		float attenuation = 0;
 		for (int i = 0; i < 9; i ++)
 		{
-			attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(
-				_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)
-			);
+			attenuation += tentWeights[i] * HardShadowAttenuation(float4(tentUVs[i].xy, shadowPos.z, 0), cascade);
 		}
 		return attenuation;
 	}
+	
+	float CascadeShadowAttenuation(float3 worldPos)
+	{
+		#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+			return 1.0;
+		#endif
+		
+		//太远不计算阴影
+		if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
+		{
+			return 1.0;
+		}
+
+		float4 cascadeFlags = float4(InsideCascadeCullingSphere(0, worldPos),
+		InsideCascadeCullingSphere(1, worldPos),
+		InsideCascadeCullingSphere(2, worldPos),
+		InsideCascadeCullingSphere(3, worldPos));
+		
+		//挪位相减 得出要的等级
+		cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);
+		//反着计算
+		float cascadeIndex = 4 - dot(cascadeFlags, float4(4, 3, 2, 1));
+		float4 shadowPos = mul(_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0));
+		float attenuation;
+		#if defined(_CASCADED_SHADOWS_HARD)
+			attenuation = HardShadowAttenuation(shadowPos, true);
+		#else
+			attenuation = SoftShadowAttenuation(shadowPos, true);
+		#endif
+		
+		return lerp(1, attenuation, _CascadedShadowStrength);
+	}
+	
+	float3 MainLight(float3 normal, float3 worldPos)
+	{
+		float shadowAttenuation = CascadeShadowAttenuation(worldPos);
+		float3 lightColor = _VisibleLightColors[0].rgb;
+		float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
+		float diffuse = saturate(dot(normal, lightDirection));
+		diffuse *= shadowAttenuation;
+		return diffuse * lightColor;
+	}
+	
+	
 	
 	float ShadowAttenuation(int index, float3 worldPos)
 	{
@@ -90,7 +165,8 @@
 			return 1.0;
 		#endif
 		
-		if (_ShadowData[index].x <= 0)
+		if (_ShadowData[index].x <= 0
+		|| DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
 		{
 			return 1.0;
 		}
@@ -98,8 +174,9 @@
 		float4 shadowPos = mul(_WorldToShadowMatrices[index], float4(worldPos, 1.0));
 		//得到NDC空间
 		shadowPos.xyz /= shadowPos.w;
+		shadowPos.xy = saturate(shadowPos.xy);
+		shadowPos.xy = shadowPos.xy * _GlobalShadowData.x + _ShadowData[index].zw;
 		//采样阴影贴图 (贴图,比较方法,当前物体在灯光矩阵的位置)
-		
 		float attenuation;
 		
 		#if defined(_SHADOWS_HARD)
@@ -159,7 +236,7 @@
 		UNITY_TRANSFER_INSTANCE_ID(input, output);
 		float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
 		output.clipPos = mul(unity_MatrixVP, worldPos);
-		output.worldPos = worldPos;
+		output.worldPos = worldPos.xyz;
 		output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
 		
 		//第二组光因为影响不严重 所以可以在顶点进行计算
@@ -183,6 +260,11 @@
 		//float3 diffuseLight = saturate(dot(input.normal, float3(0, 1, 0)));
 		
 		float3 diffuseLight = input.vertexLighting;
+		
+		#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+			diffuseLight += MainLight(input.normal, input.worldPos);
+		#endif
+		
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)
 		{
 			int lightIndex = unity_4LightIndices0[i];

@@ -14,6 +14,8 @@ public class MyPipeline : RenderPipeline
 
     private const string shadowSoftKeyword = "_SHADOWS_SOFT";
     private const string shadowHardKeyword = "_SHADOWS_HARD";
+    private const string cascadedShadowsHardKeyword = "_CASCADED_SHADOWS_HARD";
+    private const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";
 
     private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
@@ -25,6 +27,12 @@ public class MyPipeline : RenderPipeline
     private static int shadowDataID = Shader.PropertyToID("_ShadowData");
     private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
     private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
+    private static int globalShadowDataID = Shader.PropertyToID("_GlobalShadowData");
+    private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
+    private static int worldToShadowCascadeMatricesID = Shader.PropertyToID("_WorldToShadowCascadeMatrices");
+    private static int cascadedShadowMapSizedID = Shader.PropertyToID("_CascadedShadowMapSize");
+    private static int cascadedShadowStrengthID = Shader.PropertyToID("_CascadedShadowStrength");
+    private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
@@ -45,17 +53,31 @@ public class MyPipeline : RenderPipeline
     Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
     private Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];
 
-    private RenderTexture shadowMap;
+    private RenderTexture shadowMap, cascadedShadowMap;
     private float shadowDistance;
     private int shadowMapSize;
     private Vector4[] shadowData = new Vector4[maxVisibleLights];
     private Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
     private int shadowTileCount;
+    private int shadowCascades;
+    private Vector3 shadowCascadeSplit;
+    private Matrix4x4[] worldToShadowCascadeMatrices = new Matrix4x4[5];
+    Vector4[] cascadeCullingSpheres = new Vector4[4];
 
-    public MyPipeline(bool dynamicBatching, bool instancing, int _shadowMapSize, float _shadowDistance)
+    private bool mainLightExists;
+
+    public MyPipeline(bool dynamicBatching, bool instancing
+        , int _shadowMapSize, float _shadowDistance
+        , int _shadowCascades, Vector3 _shadowCascadeSplit)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
+
+        //如果Z相反 阴影的z最远是1
+        if (SystemInfo.usesReversedZBuffer)
+        {
+            worldToShadowCascadeMatrices[4].m33 = 1f;
+        }
 
         if (dynamicBatching)
         {
@@ -69,6 +91,8 @@ public class MyPipeline : RenderPipeline
 
         shadowMapSize = _shadowMapSize;
         shadowDistance = _shadowDistance;
+        shadowCascades = _shadowCascades;
+        shadowCascadeSplit = _shadowCascadeSplit;
     }
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
@@ -103,6 +127,16 @@ public class MyPipeline : RenderPipeline
         if (cull.visibleLights.Count > 0)
         {
             ConfigureLights();
+            if (mainLightExists)
+            {
+                RenderCascadedShadows(context);
+            }
+            else
+            {
+                shadowBuffer.DisableShaderKeyword(cascadedShadowsHardKeyword);
+                shadowBuffer.DisableShaderKeyword(cascadedShadowsSoftKeyword);
+            }
+
             if (shadowTileCount > 0)
             {
                 RenderShadows(context);
@@ -116,6 +150,8 @@ public class MyPipeline : RenderPipeline
         else
         {
             cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
+            shadowBuffer.DisableShaderKeyword(cascadedShadowsHardKeyword);
+            shadowBuffer.DisableShaderKeyword(cascadedShadowsSoftKeyword);
             cameraBuffer.DisableShaderKeyword(shadowHardKeyword);
             cameraBuffer.DisableShaderKeyword(shadowSoftKeyword);
         }
@@ -184,6 +220,12 @@ public class MyPipeline : RenderPipeline
             RenderTexture.ReleaseTemporary(shadowMap);
             shadowMap = null;
         }
+
+        if (cascadedShadowMap)
+        {
+            RenderTexture.ReleaseTemporary(cascadedShadowMap);
+            cascadedShadowMap = null;
+        }
     }
 
     [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
@@ -215,6 +257,7 @@ public class MyPipeline : RenderPipeline
 
     private void ConfigureLights()
     {
+        mainLightExists = false;
         shadowTileCount = 0;
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
@@ -235,8 +278,14 @@ public class MyPipeline : RenderPipeline
                 v.y = -v.y;
                 v.z = -v.z;
                 visiblelightDirectionsOrPositions[i] = v;
+                shadow = ConfigureShadows(i, light.light);
                 //z=1 是方向光
                 shadow.z = 1f;
+                if (i == 0 && shadow.x > 0f && shadowCascades > 0)
+                {
+                    mainLightExists = true;
+                    shadowTileCount -= 1;
+                }
             }
             else
             {
@@ -276,11 +325,15 @@ public class MyPipeline : RenderPipeline
             shadowData[i] = shadow;
         }
 
-
-        if (cull.visibleLights.Count > maxVisibleLights)
+        //剔除额外的光 和 主光源
+        if (mainLightExists || cull.visibleLights.Count > maxVisibleLights)
         {
-            //剔除额外的光
             int[] lightIndices = cull.GetLightIndexMap();
+            if (mainLightExists)
+            {
+                lightIndices[0] = -1;
+            }
+
             for (int i = maxVisibleLights; i < cull.visibleLights.Count; i++)
             {
                 lightIndices[i] = -1;
@@ -314,29 +367,14 @@ public class MyPipeline : RenderPipeline
         //所以这里用图片分割成4*4块
         float tileSize = shadowMapSize / split;
         float tileScale = 1f / split;
-        Rect tileViewport = new Rect(0f, 0f, tileSize, tileSize);
 
-        shadowMap = RenderTexture.GetTemporary(
-            shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap);
-        shadowMap.filterMode = FilterMode.Bilinear;
-        shadowMap.wrapMode = TextureWrapMode.Clamp;
+        shadowMap = SetShadowRenderTarget();
 
-        CoreUtils.SetRenderTarget(shadowBuffer, shadowMap
-            , RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
-            , ClearFlag.Depth);
         shadowBuffer.BeginSample("Render Shadows");
+        shadowBuffer.SetGlobalVector(globalShadowDataID, new Vector4(tileScale, shadowDistance * shadowDistance));
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
-        //原来的位置是 [-1,+1]
-        //用这个矩阵 先缩放 0.5 在偏移 +0.5
-        //var scaleOffset = Matrix4x4.TRS(
-        //    Vector3.one * 0.5f, Quaternion.identity, Vector3.one * 0.5f);
-        //上面的运算结果就是下面这个
-        //用于偏移worldToShadow 摄像机的的是中点  但是我们物体转到过去的时候是左下角所以要偏移
-        var scaleOffset = Matrix4x4.identity;
-        scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
-        scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
 
         //用于偏移worldToShadow 切图    偏移到正确的阴影切图块
         var tileMatrix = Matrix4x4.identity;
@@ -345,7 +383,7 @@ public class MyPipeline : RenderPipeline
         int tileIndex = 0;
         bool hardShadows = false;
         bool softShadows = false;
-        for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
+        for (int i = mainLightExists ? 1 : 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
             //剔除没有强度的 或者不需要的
             if (shadowData[i].x <= 0f)
@@ -380,22 +418,11 @@ public class MyPipeline : RenderPipeline
                 continue;
             }
 
+            //TODO:
             //设置渲染到贴图上的区域(起始位置和大小)
-            float tileOffsetX = tileIndex % split;
-            float tileOffsetY = tileIndex / split;
-            tileViewport.x = tileOffsetX * tileSize;
-            tileViewport.y = tileOffsetY * tileSize;
-
-            if (split > 1)
-            {
-                shadowBuffer.SetViewport(tileViewport);
-                //启动裁剪  不然采样阴影贴图边界的时候会受到另外一边的贴图的值影响
-                //尤其是软阴影的时候
-                shadowBuffer.EnableScissorRect(new Rect(
-                    tileViewport.x + 4f, tileViewport.y + 4f,
-                    tileSize - 8f, tileSize - 8f
-                ));
-            }
+            Vector2 tileOffset = ConfigureShadowTile(tileIndex, split, tileSize);
+            shadowData[i].z = tileOffset.x * tileScale;
+            shadowData[i].w = tileOffset.y * tileScale;
 
             shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
             shadowBuffer.SetGlobalFloat(shadowBiasID, cull.visibleLights[i].light.shadowBias);
@@ -407,26 +434,10 @@ public class MyPipeline : RenderPipeline
             shadowSettings.splitData.cullingSphere = splitData.cullingSphere;
             context.DrawShadows(ref shadowSettings);
 
-            //如果Z是翻转的
-            if (SystemInfo.usesReversedZBuffer)
-            {
-                projectionMatrix.m20 = -projectionMatrix.m20;
-                projectionMatrix.m21 = -projectionMatrix.m21;
-                projectionMatrix.m22 = -projectionMatrix.m22;
-                projectionMatrix.m23 = -projectionMatrix.m23;
-            }
 
+            CalculateWorldToShadowMatrix(
+                ref viewMatrix, ref projectionMatrix, out worldToShadowMatrices[i]);
 
-            //从右到左乘法
-            worldToShadowMatrices[i] = scaleOffset * (projectionMatrix * viewMatrix);
-
-
-            if (split > 1)
-            {
-                tileMatrix.m03 = tileOffsetX * tileScale;
-                tileMatrix.m13 = tileOffsetY * tileScale;
-                worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];
-            }
 
             if (shadowData[i].y <= 0f)
             {
@@ -440,11 +451,8 @@ public class MyPipeline : RenderPipeline
             tileIndex += 1;
         }
 
-        if (split > 1)
-        {
-            //渲染完成禁用裁剪   不然平常渲染也会收到影响
-            shadowBuffer.DisableScissorRect();
-        }
+        //渲染完成禁用裁剪   不然平常渲染也会收到影响
+        shadowBuffer.DisableScissorRect();
 
         shadowBuffer.SetGlobalTexture(shadowMapID, shadowMap);
         shadowBuffer.SetGlobalVectorArray(shadowDataID, shadowData);
@@ -485,5 +493,122 @@ public class MyPipeline : RenderPipeline
         }
 
         return shadow;
+    }
+
+    private RenderTexture SetShadowRenderTarget()
+    {
+        RenderTexture texture = RenderTexture.GetTemporary(
+            shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap);
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        CoreUtils.SetRenderTarget(shadowBuffer, texture
+            , RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, ClearFlag.Depth);
+
+        return texture;
+    }
+
+    private Vector2 ConfigureShadowTile(int tileIndex, int split, float tileSize)
+    {
+        Vector2 tileOffset;
+        tileOffset.x = tileIndex % split;
+        tileOffset.y = tileIndex / split;
+        var tileViewport = new Rect(
+            tileOffset.x * tileSize, tileOffset.y * tileSize, tileSize, tileSize);
+
+        shadowBuffer.SetViewport(tileViewport);
+        //启动裁剪  不然采样阴影贴图边界的时候会受到另外一边的贴图的值影响
+        //尤其是软阴影的时候
+        shadowBuffer.EnableScissorRect(new Rect(
+            tileViewport.x + 4f, tileViewport.y + 4f,
+            tileSize - 8f, tileSize - 8f
+        ));
+
+        return tileOffset;
+    }
+
+    private void CalculateWorldToShadowMatrix(
+        ref Matrix4x4 viewMatrix, ref Matrix4x4 projectionMatrix
+        , out Matrix4x4 worldToShadowMatrix)
+    {
+        //如果Z是翻转的
+        if (SystemInfo.usesReversedZBuffer)
+        {
+            projectionMatrix.m20 = -projectionMatrix.m20;
+            projectionMatrix.m21 = -projectionMatrix.m21;
+            projectionMatrix.m22 = -projectionMatrix.m22;
+            projectionMatrix.m23 = -projectionMatrix.m23;
+        }
+
+        //原来的位置是 [-1,+1]
+        //用这个矩阵 先缩放 0.5 在偏移 +0.5
+        //var scaleOffset = Matrix4x4.TRS(
+        //    Vector3.one * 0.5f, Quaternion.identity, Vector3.one * 0.5f);
+        //上面的运算结果就是下面这个
+        //用于偏移worldToShadow 摄像机的的是中点  但是我们物体转到过去的时候是左下角所以要偏移
+        var scaleOffset = Matrix4x4.identity;
+        scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
+        scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
+
+        //从右到左乘法
+        worldToShadowMatrix = scaleOffset * (projectionMatrix * viewMatrix);
+    }
+
+    private void RenderCascadedShadows(ScriptableRenderContext context)
+    {
+        float tileSize = shadowMapSize / 2;
+        cascadedShadowMap = SetShadowRenderTarget();
+        shadowBuffer.BeginSample("Render Main Shadows");
+        shadowBuffer.SetGlobalVector(
+            globalShadowDataID, new Vector4(0f, shadowDistance * shadowDistance));
+
+        context.ExecuteCommandBuffer(shadowBuffer);
+        shadowBuffer.Clear();
+        Light shadowLight = cull.visibleLights[0].light;
+        shadowBuffer.SetGlobalFloat(
+            shadowBiasID, shadowLight.shadowBias);
+        var shadowSettings = new DrawShadowsSettings(cull, 0);
+        var tileMatrix = Matrix4x4.identity;
+        tileMatrix.m00 = tileMatrix.m11 = 0.5f;
+
+        for (int i = 0; i < shadowCascades; i++)
+        {
+            Matrix4x4 viewMatrix, projectionMatrix;
+            ShadowSplitData splitData;
+            cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(
+                0, i, shadowCascades, shadowCascadeSplit, (int) tileSize
+                , shadowLight.shadowNearPlane,
+                out viewMatrix, out projectionMatrix, out splitData);
+
+            Vector2 tileOffset = ConfigureShadowTile(i, 2, tileSize);
+            shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            context.ExecuteCommandBuffer(shadowBuffer);
+            shadowBuffer.Clear();
+
+            cascadeCullingSpheres[i] = shadowSettings.splitData.cullingSphere = splitData.cullingSphere;
+            //储存半径平方 用于比较
+            cascadeCullingSpheres[i].w *= splitData.cullingSphere.w;
+            context.DrawShadows(ref shadowSettings);
+            CalculateWorldToShadowMatrix(ref viewMatrix, ref projectionMatrix
+                , out worldToShadowCascadeMatrices[i]);
+            tileMatrix.m03 = tileOffset.x * 0.5f;
+            tileMatrix.m13 = tileOffset.y * 0.5f;
+            worldToShadowMatrices[i] = tileMatrix * worldToShadowCascadeMatrices[i];
+        }
+
+        shadowBuffer.DisableScissorRect();
+        shadowBuffer.SetGlobalTexture(cascadedShadowMapID, cascadedShadowMap);
+        shadowBuffer.SetGlobalVectorArray(cascadeCullingSpheresID, cascadeCullingSpheres);
+        shadowBuffer.SetGlobalMatrixArray(worldToShadowCascadeMatricesID, worldToShadowCascadeMatrices);
+        float invShadowMapSize = 1f / shadowMapSize;
+        shadowBuffer.SetGlobalVector(cascadedShadowMapSizedID
+            , new Vector4(invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize));
+        shadowBuffer.SetGlobalFloat(cascadedShadowStrengthID, shadowLight.shadowStrength);
+        bool hard = shadowLight.shadows == LightShadows.Hard;
+        CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsHardKeyword, hard);
+        CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsSoftKeyword, !hard);
+        shadowBuffer.EndSample("Render Main Shadows");
+        context.ExecuteCommandBuffer(shadowBuffer);
+        shadowBuffer.Clear();
     }
 }

@@ -20,6 +20,7 @@
 			//法向量 取消 非均匀缩放的 支持
 			#pragma instancing_options assumeuniformscaling
 			
+			#pragma multi_compile _ _CASCADED_SHADOWS_HARD _CASCADED_SHADOWS_SOFT
 			#pragma multi_compile _ _SHADOWS_HARD
 			#pragma multi_compile _ _SHADOWS_SOFT
 			

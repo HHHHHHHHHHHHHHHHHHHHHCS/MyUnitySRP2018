@@ -14,4 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   dynamicBatching: 0
   instancing: 1
-  shadowMapSize: 1024
+  shadowMapSize: 4096
+  shadowDistance: 20
+  shadowCascades: 4
+  twoCascadesSplit: 0.25
+  fourCascadesSplit: {x: 0.067, y: 0.2, z: 0.467}

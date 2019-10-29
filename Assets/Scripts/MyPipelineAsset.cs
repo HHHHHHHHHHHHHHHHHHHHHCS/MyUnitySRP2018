@@ -15,6 +15,13 @@ public class MyPipelineAsset : RenderPipelineAsset
         _4096 = 4096,
     }
 
+    public enum ShadowCascades
+    {
+        Zero = 0,
+        Two = 2,
+        Four = 4,
+    }
+
 
     //如果都是大物体不用怎么动态合批  不建议勾选  不然Unity会每帧去计算是否要合批
     [SerializeField] private bool dynamicBatching;
@@ -28,8 +35,23 @@ public class MyPipelineAsset : RenderPipelineAsset
     //阴影的距离
     [SerializeField] private float shadowDistance = 100f;
 
+    //阴影级联
+    [SerializeField] private ShadowCascades shadowCascades = ShadowCascades.Four;
+
+    //阴影级联 2级距离
+    [SerializeField, HideInInspector] private float twoCascadesSplit = 0.25f;
+
+    //阴影级联 4级距离
+    [SerializeField, HideInInspector] private Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);
+
     protected override IRenderPipeline InternalCreatePipeline()
     {
-        return new MyPipeline(dynamicBatching, instancing, (int) shadowMapSize, shadowDistance);
+        Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four
+            ? fourCascadesSplit
+            : new Vector3(twoCascadesSplit, 0f);
+
+        return new MyPipeline(dynamicBatching, instancing
+            , (int) shadowMapSize, shadowDistance
+            , (int) shadowCascades, shadowCascadeSplit);
     }
 }
