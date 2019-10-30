@@ -44,6 +44,11 @@
 	float _CascadedShadowStrength;
 	CBUFFER_END
 	
+	CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	float _Cutoff;
+	CBUFFER_END
+	
 	//其实跟texture2D差不多 , 但是OPENGL2.0 不支持阴影深度图比较   但是我们不用支持OPENGL2.0
 	TEXTURE2D_SHADOW(_ShadowMap);
 	//采样器比较方法  名字规定是sampler+贴图name
@@ -52,6 +57,8 @@
 	TEXTURE2D_SHADOW(_CascadedShadowMap);
 	SAMPLER_CMP(sampler_CascadedShadowMap);
 	
+	TEXTURE2D(_MainTex);
+	SAMPLER(sampler_MainTex);
 	
 	float DistanceToCameraSqr(float3 worldPos)
 	{
@@ -220,6 +227,7 @@
 	{
 		float4 pos: POSITION;
 		float3 normal: NORMAL;
+		float2 uv: TEXCOORD0;
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -229,6 +237,7 @@
 		float3 normal: TEXCOORD0;
 		float3 worldPos: TEXCOORD1;
 		float3 vertexLighting: TEXCOORD2;
+		float2 uv: TEXCOORD3;
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -251,15 +260,23 @@
 			output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos, 1);
 		}
 		
+		output.uv = TRANSFORM_TEX(input.uv, _MainTex);
 		return output;
 	}
 	
-	float4 LitPassFragment(VertexOutput input): SV_TARGET
+	float4 LitPassFragment(VertexOutput input, FRONT_FACE_TYPE isFrontFace: FRONT_FACE_SEMANTIC): SV_TARGET
 	{
 		UNITY_SETUP_INSTANCE_ID(input);
 		input.normal = normalize(input.normal);
-		float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+		input.normal = IS_FRONT_VFACE(isFrontFace, input.normal, -input.normal);
 		
+		float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+		albedoAlpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color);
+		
+		#if defined(_CLIPPING)
+		clip(albedoAlpha.a - _Cutoff);
+		#endif
+
 		//float3 diffuseLight = saturate(dot(input.normal, float3(0, 1, 0)));
 		
 		float3 diffuseLight = input.vertexLighting;
@@ -275,8 +292,8 @@
 			diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos, shadowAttenuation);
 		}
 		
-		float3 color = diffuseLight * albedo;
-		return float4(color, 1);
+		float3 color = diffuseLight * albedoAlpha.rgb;
+		return float4(color, albedoAlpha.a);
 	}
 	
 #endif // MYRP_LIT_INCLUDED
