@@ -1,7 +1,6 @@
 #ifndef MYRP_LIT_INCLUDED
 	#define MYRP_LIT_INCLUDED
 	
-	#define MAX_VISIBLE_LIGHTS 16
 	
 	
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
@@ -22,6 +21,9 @@
 	float4 unity_LightIndicesOffsetAndCount;
 	float4 unity_4LightIndices0, unity_4LightIndices1;
 	CBUFFER_END
+	
+	
+	#define MAX_VISIBLE_LIGHTS 16
 	
 	CBUFFER_START(_LightBuffer)
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
@@ -50,36 +52,6 @@
 	TEXTURE2D_SHADOW(_CascadedShadowMap);
 	SAMPLER_CMP(sampler_CascadedShadowMap);
 	
-	#define UNITY_MATRIX_M unity_ObjectToWorld
-	
-	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
-	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
-	
-	UNITY_INSTANCING_BUFFER_START(PerInstance)
-	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
-	UNITY_INSTANCING_BUFFER_END(PerInstance)
-	
-	struct VertexInput
-	{
-		float4 pos: POSITION;
-		float3 normal: NORMAL;
-		UNITY_VERTEX_INPUT_INSTANCE_ID
-	};
-	
-	struct VertexOutput
-	{
-		float4 clipPos: SV_POSITION;
-		float3 normal: TEXCOORD0;
-		float3 worldPos: TEXCOORD1;
-		float3 vertexLighting: TEXCOORD2;
-		UNITY_VERTEX_INPUT_INSTANCE_ID
-	};
-	
-	float InsideCascadeCullingSphere(int index, float3 worldPos)
-	{
-		float4 s = _CascadeCullingSpheres[index];
-		return dot(worldPos - s.xyz, worldPos - s.xyz) > s.w;
-	}
 	
 	float DistanceToCameraSqr(float3 worldPos)
 	{
@@ -115,49 +87,6 @@
 		return attenuation;
 	}
 	
-	float CascadeShadowAttenuation(float3 worldPos)
-	{
-		#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
-			return 1.0;
-		#endif
-		
-		//太远不计算阴影
-		if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
-		{
-			return 1.0;
-		}
-
-		float4 cascadeFlags = float4(InsideCascadeCullingSphere(0, worldPos),
-		InsideCascadeCullingSphere(1, worldPos),
-		InsideCascadeCullingSphere(2, worldPos),
-		InsideCascadeCullingSphere(3, worldPos));
-		
-		//挪位相减 得出要的等级
-		cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);
-		//反着计算
-		float cascadeIndex = 4 - dot(cascadeFlags, float4(4, 3, 2, 1));
-		float4 shadowPos = mul(_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0));
-		float attenuation;
-		#if defined(_CASCADED_SHADOWS_HARD)
-			attenuation = HardShadowAttenuation(shadowPos, true);
-		#else
-			attenuation = SoftShadowAttenuation(shadowPos, true);
-		#endif
-		
-		return lerp(1, attenuation, _CascadedShadowStrength);
-	}
-	
-	float3 MainLight(float3 normal, float3 worldPos)
-	{
-		float shadowAttenuation = CascadeShadowAttenuation(worldPos);
-		float3 lightColor = _VisibleLightColors[0].rgb;
-		float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
-		float diffuse = saturate(dot(normal, lightDirection));
-		diffuse *= shadowAttenuation;
-		return diffuse * lightColor;
-	}
-	
-	
 	
 	float ShadowAttenuation(int index, float3 worldPos)
 	{
@@ -165,7 +94,7 @@
 			return 1.0;
 		#endif
 		
-		if (_ShadowData[index].x <= 0
+		if(_ShadowData[index].x <= 0
 		|| DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
 		{
 			return 1.0;
@@ -199,6 +128,55 @@
 		return lerp(1, attenuation, _ShadowData[index].x);
 	}
 	
+	float InsideCascadeCullingSphere(int index, float3 worldPos)
+	{
+		float4 s = _CascadeCullingSpheres[index];
+		return dot(worldPos - s.xyz, worldPos - s.xyz) < s.w;
+	}
+	
+	float CascadedShadowAttenuation(float3 worldPos)
+	{
+		#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+			return 1.0;
+		#endif
+		
+		//太远不计算阴影
+		if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
+		{
+			return 1.0;
+		}
+		
+		float4 cascadeFlags = float4(InsideCascadeCullingSphere(0, worldPos),
+		InsideCascadeCullingSphere(1, worldPos),
+		InsideCascadeCullingSphere(2, worldPos),
+		InsideCascadeCullingSphere(3, worldPos));
+		
+		//挪位相减 得出要的等级
+		cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);
+		//反着计算
+		float cascadeIndex = 4 - dot(cascadeFlags, float4(4, 3, 2, 1));
+		float4 shadowPos = mul(_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0));
+		float attenuation;
+		#if defined(_CASCADED_SHADOWS_HARD)
+			attenuation = HardShadowAttenuation(shadowPos, true);
+		#else
+			attenuation = SoftShadowAttenuation(shadowPos, true);
+		#endif
+		
+		return lerp(1, attenuation, _CascadedShadowStrength);
+	}
+	
+	float3 MainLight(float3 normal, float3 worldPos)
+	{
+		float shadowAttenuation = CascadedShadowAttenuation(worldPos);
+		float3 lightColor = _VisibleLightColors[0].rgb;
+		float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
+		float diffuse = saturate(dot(normal, lightDirection));
+		diffuse *= shadowAttenuation;
+		return diffuse * lightColor;
+	}
+	
+	
 	float3 DiffuseLight(int index, float3 normal, float3 worldPos, float shadowAttenuation)
 	{
 		float3 lightColor = _VisibleLightColors[index].rgb;
@@ -228,6 +206,31 @@
 		diffuse *= shadowAttenuation * spotFade * rangeFade / distanceSqr;
 		return diffuse * lightColor;
 	}
+	
+	#define UNITY_MATRIX_M unity_ObjectToWorld
+	
+	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
+	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+	
+	UNITY_INSTANCING_BUFFER_START(PerInstance)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+	UNITY_INSTANCING_BUFFER_END(PerInstance)
+	
+	struct VertexInput
+	{
+		float4 pos: POSITION;
+		float3 normal: NORMAL;
+		UNITY_VERTEX_INPUT_INSTANCE_ID
+	};
+	
+	struct VertexOutput
+	{
+		float4 clipPos: SV_POSITION;
+		float3 normal: TEXCOORD0;
+		float3 worldPos: TEXCOORD1;
+		float3 vertexLighting: TEXCOORD2;
+		UNITY_VERTEX_INPUT_INSTANCE_ID
+	};
 	
 	VertexOutput LitPassVertex(VertexInput input)
 	{
