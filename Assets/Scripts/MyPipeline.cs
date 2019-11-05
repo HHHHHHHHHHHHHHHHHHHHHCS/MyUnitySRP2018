@@ -466,7 +466,6 @@ public class MyPipeline : RenderPipeline
                 continue;
             }
 
-            //TODO:
             //设置渲染到贴图上的区域(起始位置和大小)
             Vector2 tileOffset = ConfigureShadowTile(tileIndex, split, tileSize);
             shadowData[i].z = tileOffset.x * tileScale;

@@ -2,12 +2,16 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class InstancedColor : MonoBehaviour
+public class InstancedMaterialProperties : MonoBehaviour
 {
     private static MaterialPropertyBlock propertyBlock;
     private static readonly int colorID = Shader.PropertyToID("_Color");
+    private static readonly int smoothnessID = Shader.PropertyToID("_Smoothness");
 
     [SerializeField] private Color color = Color.white;
+
+    [SerializeField, Range(0f, 1f)] private float smoothness = 0.5f;
+
 
     private void Awake()
     {
@@ -22,6 +26,7 @@ public class InstancedColor : MonoBehaviour
         }
 
         propertyBlock.SetColor(colorID, color);
+        propertyBlock.SetFloat(smoothnessID, smoothness);
         GetComponent<MeshRenderer>().SetPropertyBlock(propertyBlock);
     }
 }
