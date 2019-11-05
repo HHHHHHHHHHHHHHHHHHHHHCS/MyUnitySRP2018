@@ -450,7 +450,7 @@ public class MyPipeline : RenderPipeline
                 //参数 1:灯光index  2:cascadeIndex  3:cascadeCount   4:cascade 分级距离
                 //5: 分辨率   6:nearPlane 如果太近不画
                 validShadows = cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(
-                    i, 0, 1, Vector3.right, (int) tileSize
+                    i, 0, 1, Vector3.right, (int)tileSize
                     , cull.visibleLights[i].light.shadowNearPlane
                     , out viewMatrix, out projectionMatrix, out splitData);
             }
