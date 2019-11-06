@@ -306,6 +306,7 @@ public class MyPipeline : RenderPipeline
         if (mainLightExists || cull.visibleLights.Count > maxVisibleLights)
         {
             int[] lightIndices = cull.GetLightIndexMap();
+
             if (mainLightExists)
             {
                 lightIndices[0] = -1;

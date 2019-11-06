@@ -1,12 +1,12 @@
 #ifndef MYRP_LIT_INCLUDED
 	#define MYRP_LIT_INCLUDED
 	
-	
-	
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
 	//Perceptualroughnesstomipmaplevel() 方法需要
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
+	//HDR Decodig 要用
+	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
 	#include "Lighting.hlsl"
 	
 	CBUFFER_START(UnityPerFrame)
@@ -24,6 +24,10 @@
 	//y 物体收到几个光的影响
 	float4 unity_LightIndicesOffsetAndCount;
 	float4 unity_4LightIndices0, unity_4LightIndices1;
+	float4 unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax;
+	float4 unity_SpecCube0_ProbePosition, unity_SpecCube0_HDR;
+	float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
+	float4 unity_SpecCube1_ProbePosition, unity_SpecCube1_HDR;
 	CBUFFER_END
 	
 	
@@ -65,11 +69,28 @@
 	SAMPLER(sampler_MainTex);
 	
 	TEXTURECUBE(unity_SpecCube0);
+	TEXTURECUBE(unity_SpecCube1);
 	SAMPLER(samplerunity_SpecCube0);
+	SAMPLER(samplerunity_SpecCube1);
+	
+	
+	//box reflection probe 校准
+	float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition, float4 boxMin, float4 boxMax)
+	{
+		//.w代表是否box Projection
+		UNITY_BRANCH
+		if (cubemapPosition.w > 0)
+		{
+			float3 factors = ((direction > 0?boxMax.xyz: boxMin.xyz) - position) / direction;
+			float scalar = min(min(factors.x, factors.y), factors.z);
+			direction = direction * scalar + (position - cubemapPosition.xyz);
+		}
+		return direction;
+	}
 	
 	float3 ReflectEnvironment(LitSurface s, float3 environment)
 	{
-		if (s.perfectDiffuser)
+		if(s.perfectDiffuser)
 		{
 			return 0;
 		}
@@ -87,9 +108,19 @@
 		float3 reflectVector = reflect(-s.viewDir, s.normal);
 		float mip = PerceptualRoughnessToMipmapLevel(s.perceptualRoughness);
 		
-		float3 uvw = reflectVector;
+		float3 uvw = BoxProjection(reflectVector, s.position, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
 		float4 sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, 0);
-		float3 color = sample.rgb;
+		float3 color = DecodeHDREnvironment(sample, unity_SpecCube0_HDR);
+		
+		//min.w 存的是 混合权重
+		float blend = unity_SpecCube0_BoxMin.w;
+		if (blend < 0.9999)
+		{
+			uvw = BoxProjection(reflectVector, s.position, unity_SpecCube1_ProbePosition, unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
+			sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube1, samplerunity_SpecCube1, uvw, mip);
+			color = lerp(DecodeHDREnvironment(sample, unity_SpecCube1_HDR), color, blend);
+		}
+		
 		return color;
 	}
 	
@@ -325,6 +356,10 @@
 		float3 viewDir = normalize(_WorldSpaceCameraPos - input.worldPos.xyz);
 		LitSurface surface = GetLitSurface(input.normal, input.worldPos, viewDir, albedoAlpha.rgb, UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Metallic), UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness));
 		
+		#if defined(_PREMULTIPLY_ALPHA)
+			PremultiplyAlpha(surface, albedoAlpha.a);
+		#endif
+		
 		float3 color = input.vertexLighting * surface.diffuse;
 		
 		#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
@@ -339,6 +374,8 @@
 		}
 		
 		color += ReflectEnvironment(surface, SampleEnvironment(surface));
+		
+		
 		
 		return float4(color, albedoAlpha.a);
 	}

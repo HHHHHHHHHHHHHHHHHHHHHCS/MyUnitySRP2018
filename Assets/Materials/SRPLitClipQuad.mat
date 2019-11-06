@@ -9,13 +9,14 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: SRPLitClipQuad
   m_Shader: {fileID: 4800000, guid: fb525af7f9d3ce742abf45e30a517946, type: 3}
-  m_ShaderKeywords: _CLIPPING _CLIPPING_SHADOWS _RECEIVE_SHADOWS
+  m_ShaderKeywords: _CLIPPING _CLIPPING_OFF _PREMULTIPLY_ALPHA
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: 3000
   stringTagMap: {}
-  disabledShaderPasses: []
+  disabledShaderPasses:
+  - SHADOWCASTER
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -40,7 +41,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 500a90f2d1c62994d93d28cb36b341c1, type: 3}
+        m_Texture: {fileID: 2800000, guid: c2abad6449dc9784dbb61609c06efec1, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -57,7 +58,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Floats:
     - _BumpScale: 1
-    - _Clipping: 2
+    - _Clipping: 0
     - _Cull: 2
     - _Cutoff: 0.712
     - _DetailNormalMapScale: 1
@@ -65,14 +66,16 @@ Material:
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _Metallic: 0
+    - _Metallic: 0.163
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
-    - _ReceiveShadows: 1
+    - _PremulAlpha: 1
+    - _ReceiveShadows: 0
+    - _Smoothness: 0.436
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
-    - _SrcBlend: 5
+    - _SrcBlend: 1
     - _UVSec: 0
     - _ZWrite: 0
     m_Colors:

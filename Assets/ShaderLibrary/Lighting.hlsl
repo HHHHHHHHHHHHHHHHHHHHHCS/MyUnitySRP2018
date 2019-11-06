@@ -65,4 +65,10 @@
 		return GetLitSurface(normal, position, 0, 1, 0, 0, true);
 	}
 	
+	void PremultiplyAlpha(inout LitSurface s, inout float alpha)
+	{
+		s.diffuse *= alpha;
+		alpha = lerp(alpha, 1, s.reflectivity);
+	}
+	
 #endif // MYRP_LIGHTING_INCLUDED
