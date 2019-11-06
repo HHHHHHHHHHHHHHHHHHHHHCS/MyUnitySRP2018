@@ -5,6 +5,8 @@
 	
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
+	//Perceptualroughnesstomipmaplevel() 方法需要
+	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
 	#include "Lighting.hlsl"
 	
 	CBUFFER_START(UnityPerFrame)
@@ -16,7 +18,8 @@
 	CBUFFER_END
 	
 	CBUFFER_START(UnityPerDraw)
-	float4x4 unity_ObjectToWorld;
+	//第一个物体世界空间,第二个不规则缩放用
+	float4x4 unity_ObjectToWorld, unity_WorldToObject;
 	//x 组件包含第二种方法使用时的偏移量
 	//y 物体收到几个光的影响
 	float4 unity_LightIndicesOffsetAndCount;
@@ -61,8 +64,34 @@
 	TEXTURE2D(_MainTex);
 	SAMPLER(sampler_MainTex);
 	
-	TEXTURE2D(unity_SpecCube0);
+	TEXTURECUBE(unity_SpecCube0);
 	SAMPLER(samplerunity_SpecCube0);
+	
+	float3 ReflectEnvironment(LitSurface s, float3 environment)
+	{
+		if (s.perfectDiffuser)
+		{
+			return 0;
+		}
+		
+		environment *= s.specular;
+		environment /= s.roughness * s.roughness + 1.0;
+		
+		float fresnel = Pow4(1.0 - saturate(dot(s.normal, s.viewDir)));
+		environment *= lerp(s.specular, s.fresnelStrength, fresnel);
+		return environment;
+	}
+	
+	float3 SampleEnvironment(LitSurface s)
+	{
+		float3 reflectVector = reflect(-s.viewDir, s.normal);
+		float mip = PerceptualRoughnessToMipmapLevel(s.perceptualRoughness);
+		
+		float3 uvw = reflectVector;
+		float4 sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, 0);
+		float3 color = sample.rgb;
+		return color;
+	}
 	
 	float DistanceToCameraSqr(float3 worldPos)
 	{
@@ -72,7 +101,7 @@
 	
 	float HardShadowAttenuation(float4 shadowPos, bool cascade = false)
 	{
-		if (cascade)
+		if(cascade)
 		{
 			return SAMPLE_TEXTURE2D_SHADOW(_CascadedShadowMap, sampler_CascadedShadowMap, shadowPos.xyz);
 		}
@@ -223,12 +252,14 @@
 	}
 	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
+	#define UNITY_MATRIX_I_M unity_WorldToObject
 	
 	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 	
 	UNITY_INSTANCING_BUFFER_START(PerInstance)
 	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+	UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
 	UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
 	UNITY_INSTANCING_BUFFER_END(PerInstance)
 	
@@ -258,7 +289,11 @@
 		float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
 		output.clipPos = mul(unity_MatrixVP, worldPos);
 		output.worldPos = worldPos.xyz;
-		output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
+		#if defined(UNITY_ASSUME_UNIFORM_SCALING)
+			output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
+		#else
+			output.normal = normalize(mul(input.normal, (float3x3)UNITY_MATRIX_I_M));
+		#endif
 		
 		LitSurface surface = GetLitSurfaceVertex(output.normal, output.worldPos);
 		//第二组光因为影响不严重 所以可以在顶点进行计算
@@ -288,7 +323,7 @@
 		#endif
 		
 		float3 viewDir = normalize(_WorldSpaceCameraPos - input.worldPos.xyz);
-		LitSurface surface = GetLitSurface(input.normal, input.worldPos, viewDir, albedoAlpha.rgb, UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness));
+		LitSurface surface = GetLitSurface(input.normal, input.worldPos, viewDir, albedoAlpha.rgb, UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Metallic), UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness));
 		
 		float3 color = input.vertexLighting * surface.diffuse;
 		
@@ -302,6 +337,8 @@
 			float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);
 			color += GenericLight(lightIndex, surface, shadowAttenuation);
 		}
+		
+		color += ReflectEnvironment(surface, SampleEnvironment(surface));
 		
 		return float4(color, albedoAlpha.a);
 	}

@@ -5,12 +5,12 @@
 	{
 		float3 normal, position, viewDir;
 		float3 diffuse, specular;
-		float perceptualRoughness, roughness;
+		float perceptualRoughness, roughness, fresnelStrength, reflectivity;
 		bool perfectDiffuser;
 	};
 	
 	LitSurface GetLitSurface(
-		float3 normal, float3 position, float3 viewDir, float3 color, float smoothness, bool perfectDiffuser = false)
+		float3 normal, float3 position, float3 viewDir, float3 color, float metallic, float smoothness, bool perfectDiffuser = false)
 	{
 		LitSurface s;
 		s.normal = normal;
@@ -21,17 +21,22 @@
 		s.perceptualRoughness = 1.0 - smoothness;
 		if (perfectDiffuser)
 		{
+			s.reflectivity = 0.0;
 			smoothness = 0.0;
 			s.specular = 0.0;
 		}
 		else
 		{
-			s.specular = 0.04;
-			s.diffuse *= 1.0 - 0.04;
+			//metallic 提高反射颜色 降低自身颜色
+			s.specular = lerp(0.04, color, metallic);
+			s.reflectivity = lerp(0.04, 1.0, metallic);
+			s.diffuse *= 1.0 - s.reflectivity;
 		}
 		
 		s.perfectDiffuser = perfectDiffuser;
 		s.roughness = s.perceptualRoughness * s.perceptualRoughness;
+		//菲尼尔由smoothness 和 metallic 决定
+		s.fresnelStrength = saturate(smoothness + s.reflectivity);
 		return s;
 	}
 	
@@ -39,7 +44,7 @@
 	{
 		float3 color = s.diffuse;
 		
-		if(!s.perfectDiffuser)
+		if (!s.perfectDiffuser)
 		{
 			//CookTorrance BRDF
 			float3 halfDir = SafeNormalize(lightDir + s.viewDir);
@@ -57,7 +62,7 @@
 	
 	LitSurface GetLitSurfaceVertex(float3 normal, float3 position)
 	{
-		return GetLitSurface(normal, position, 0, 1, 0, true);
+		return GetLitSurface(normal, position, 0, 1, 0, 0, true);
 	}
 	
 #endif // MYRP_LIGHTING_INCLUDED

@@ -184,11 +184,14 @@ public class MyPipeline : RenderPipeline
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"))
         {
             flags = drawFlags,
-            rendererConfiguration =
-                cull.visibleLights.Count > 0
-                    ? RendererConfiguration.PerObjectLightIndices8
-                    : RendererConfiguration.None
+            rendererConfiguration = RendererConfiguration.None
         };
+        if (cull.visibleLights.Count > 0)
+        {
+            drawSettings.rendererConfiguration = RendererConfiguration.PerObjectLightIndices8;
+        }
+        drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes;
+
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
         //因为 Unity 更喜欢将对象空间化地分组以减少overdraw
         var filterSettings = new FilterRenderersSettings(true)
@@ -359,7 +362,7 @@ public class MyPipeline : RenderPipeline
             Matrix4x4 viewMatrix, projectionMatrix;
             ShadowSplitData splitData;
             cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(
-                0, i, shadowCascades, shadowCascadeSplit, (int)tileSize
+                0, i, shadowCascades, shadowCascadeSplit, (int) tileSize
                 , shadowLight.shadowNearPlane,
                 out viewMatrix, out projectionMatrix, out splitData);
 
@@ -450,7 +453,7 @@ public class MyPipeline : RenderPipeline
                 //参数 1:灯光index  2:cascadeIndex  3:cascadeCount   4:cascade 分级距离
                 //5: 分辨率   6:nearPlane 如果太近不画
                 validShadows = cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(
-                    i, 0, 1, Vector3.right, (int)tileSize
+                    i, 0, 1, Vector3.right, (int) tileSize
                     , cull.visibleLights[i].light.shadowNearPlane
                     , out viewMatrix, out projectionMatrix, out splitData);
             }
