@@ -308,6 +308,7 @@
 	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
 	UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
 	UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _EmissionColor)
 	UNITY_INSTANCING_BUFFER_END(PerInstance)
 	
 	struct VertexInput
@@ -407,7 +408,9 @@
 		
 		color += ReflectEnvironment(surface, SampleEnvironment(surface));
 		
-		color += GlobalIllumination(input) * surface.diffuse;
+		color = GlobalIllumination(input) * surface.diffuse;
+		
+		color += UNITY_ACCESS_INSTANCED_PROP(PerInstance, _EmissionColor).rgb;
 		
 		return float4(color, albedoAlpha.a);
 	}

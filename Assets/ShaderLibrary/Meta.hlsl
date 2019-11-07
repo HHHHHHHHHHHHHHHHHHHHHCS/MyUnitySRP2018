@@ -14,7 +14,7 @@
 	
 	CBUFFER_START(UnityPerMaterial)
 	float4 _MainTex_ST;
-	float4 _Color;
+	float4 _Color, _EmissionColor;
 	float _Metallic;
 	float _Smoothness;
 	CBUFFER_END
@@ -68,7 +68,10 @@
 			meta.rgb += surface.specular * surface.roughness * 0.5;
 			meta.rgb = clamp(PositivePow(meta.rgb, unity_OneOverOutputBoost), 0, unity_MaxOutputValue);
 		}
-		
+		if (unity_MetaFragmentControl.y)
+		{
+			meta = float4(_EmissionColor.rgb, 1);
+		}
 		return meta;
 	}
 	
