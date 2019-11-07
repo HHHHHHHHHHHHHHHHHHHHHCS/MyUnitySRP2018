@@ -44,6 +44,9 @@ public class MyPipelineAsset : RenderPipelineAsset
     //阴影级联 4级距离
     [SerializeField, HideInInspector] private Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);
 
+    //同步Camera
+    [SerializeField] private bool syncGameCamera = false;
+
     protected override IRenderPipeline InternalCreatePipeline()
     {
         Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four
@@ -52,6 +55,6 @@ public class MyPipelineAsset : RenderPipelineAsset
 
         return new MyPipeline(dynamicBatching, instancing
             , (int) shadowMapSize, shadowDistance
-            , (int) shadowCascades, shadowCascadeSplit);
+            , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
     }
 }

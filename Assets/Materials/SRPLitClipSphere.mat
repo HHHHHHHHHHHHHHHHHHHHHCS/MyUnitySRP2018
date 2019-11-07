@@ -9,7 +9,7 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: SRPLitClipSphere
   m_Shader: {fileID: 4800000, guid: fb525af7f9d3ce742abf45e30a517946, type: 3}
-  m_ShaderKeywords: _CLIPPING _RECEIVE_SHADOWS
+  m_ShaderKeywords: _CLIPPING _CLIPPING_ON _RECEIVE_SHADOWS
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
@@ -69,7 +69,9 @@ Material:
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
+    - _PremulAlpha: 0
     - _ReceiveShadows: 1
+    - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1

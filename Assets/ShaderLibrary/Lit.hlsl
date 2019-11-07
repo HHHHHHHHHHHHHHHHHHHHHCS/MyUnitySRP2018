@@ -28,6 +28,7 @@
 	float4 unity_SpecCube0_ProbePosition, unity_SpecCube0_HDR;
 	float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
 	float4 unity_SpecCube1_ProbePosition, unity_SpecCube1_HDR;
+	float4 unity_LightmapST;
 	CBUFFER_END
 	
 	
@@ -73,6 +74,8 @@
 	SAMPLER(samplerunity_SpecCube0);
 	SAMPLER(samplerunity_SpecCube1);
 	
+	TEXTURE2D(unity_Lightmap);
+	SAMPLER(samplerunity_Lightmap);
 	
 	//box reflection probe 校准
 	float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition, float4 boxMin, float4 boxMax)
@@ -282,6 +285,19 @@
 		return color * lightColor;
 	}
 	
+	float3 SampleLightmap(float2 uv)
+	{
+		//以为在顶点中已经进行 ST 缩放了  所以这里片元不用了
+		float4 offset = float4(1, 1, 0, 0);
+		bool isLDR = true;
+		#if defined(UNITY_LIGHTMAP_FULL_HDR)
+			isLDR = false;
+		#endif
+		//HDR的解析编码
+		float4 hdrDecode = float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0);
+		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv, offset, isLDR, hdrDecode);
+	}
+	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
 	#define UNITY_MATRIX_I_M unity_WorldToObject
 	
@@ -299,6 +315,7 @@
 		float4 pos: POSITION;
 		float3 normal: NORMAL;
 		float2 uv: TEXCOORD0;
+		float2 lightmapUV: TEXCOORD1;
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -309,8 +326,20 @@
 		float3 worldPos: TEXCOORD1;
 		float3 vertexLighting: TEXCOORD2;
 		float2 uv: TEXCOORD3;
+		#if defined(LIGHTMAP_ON)
+			float2 lightmapUV: TEXCOORD4;
+		#endif
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
+	
+	
+	float3 GlobalIllumination(VertexOutput input)
+	{
+		#if defined(LIGHTMAP_ON)
+			return SampleLightmap(input.lightmapUV);
+		#endif
+		return 0;
+	}
 	
 	VertexOutput LitPassVertex(VertexInput input)
 	{
@@ -337,6 +366,9 @@
 		}
 		
 		output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+		#if defined(LIGHTMAP_ON)
+			output.lightmapUV = input.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;
+		#endif
 		return output;
 	}
 	
@@ -375,7 +407,7 @@
 		
 		color += ReflectEnvironment(surface, SampleEnvironment(surface));
 		
-		
+		color += GlobalIllumination(input) * surface.diffuse;
 		
 		return float4(color, albedoAlpha.a);
 	}

@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Experimental.Rendering;
@@ -34,6 +35,8 @@ public class MyPipeline : RenderPipeline
     private static int cascadedShadowStrengthID = Shader.PropertyToID("_CascadedShadowStrength");
     private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
 
+    private static Camera mainCamera;
+
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
         name = "Render Camera"
@@ -65,10 +68,13 @@ public class MyPipeline : RenderPipeline
     Vector4[] cascadeCullingSpheres = new Vector4[4];
 
     private bool mainLightExists;
+#if UNITY_EDITOR
+    private readonly bool syncGameCamera;
+#endif
 
     public MyPipeline(bool dynamicBatching, bool instancing
         , int _shadowMapSize, float _shadowDistance
-        , int _shadowCascades, Vector3 _shadowCascadeSplit)
+        , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -93,7 +99,35 @@ public class MyPipeline : RenderPipeline
         shadowDistance = _shadowDistance;
         shadowCascades = _shadowCascades;
         shadowCascadeSplit = _shadowCascadeSplit;
+
+#if UNITY_EDITOR
+        syncGameCamera = _syncGameCamera;
+        SceneView.onSceneGUIDelegate += OnSceneView;
+#endif
     }
+
+    public override void Dispose()
+    {
+#if UNITY_EDITOR
+        if (SceneView.onSceneGUIDelegate != null) SceneView.onSceneGUIDelegate -= OnSceneView;
+#endif
+    }
+
+#if UNITY_EDITOR
+    private void OnSceneView(SceneView view)
+    {
+        if (syncGameCamera)
+        {
+            if (view != null && view.camera != null && view.camera.cameraType == CameraType.SceneView
+                && mainCamera != null)
+            {
+                var transform = mainCamera.transform;
+                transform.position = view.camera.transform.position;
+                transform.rotation = view.camera.transform.rotation;
+            }
+        }
+    }
+#endif
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
     {
@@ -118,6 +152,10 @@ public class MyPipeline : RenderPipeline
         {
             //将UI几何体发射到“场景”视图中以进行渲染。
             ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);
+        }
+        else if (mainCamera == null && camera.cameraType == CameraType.Game && camera == Camera.main)
+        {
+            mainCamera = camera;
         }
 #endif
 
@@ -190,7 +228,9 @@ public class MyPipeline : RenderPipeline
         {
             drawSettings.rendererConfiguration = RendererConfiguration.PerObjectLightIndices8;
         }
-        drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes;
+
+        drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes
+                                              | RendererConfiguration.PerObjectLightmaps;
 
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
         //因为 Unity 更喜欢将对象空间化地分组以减少overdraw
