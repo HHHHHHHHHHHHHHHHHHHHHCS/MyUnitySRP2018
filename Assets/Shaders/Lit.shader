@@ -38,7 +38,7 @@
 			#pragma shader_feature _CLIPPING_ON
 			#pragma shader_feature _RECEIVE_SHADOWS
 			#pragma shader_feature _PREMULTIPLY_ALPHA
-
+			
 			#pragma multi_compile _ _CASCADED_SHADOWS_HARD _CASCADED_SHADOWS_SOFT
 			#pragma multi_compile _ _SHADOWS_HARD
 			#pragma multi_compile _ _SHADOWS_SOFT
@@ -72,6 +72,24 @@
 			#pragma fragment ShadowCasterPassFragment
 			
 			#include "../ShaderLibrary/ShadowCaster.hlsl"
+			
+			ENDHLSL
+			
+		}
+		
+		
+		Pass
+		{
+			Tags { "LightMode" = "Meta" }
+			
+			Cull Off
+			
+			HLSLPROGRAM
+			
+			#pragma vertex MetaPassVertex
+			#pragma fragment MetaPassFragment
+			
+			#include "../ShaderLibrary/Meta.hlsl"
 			
 			ENDHLSL
 			

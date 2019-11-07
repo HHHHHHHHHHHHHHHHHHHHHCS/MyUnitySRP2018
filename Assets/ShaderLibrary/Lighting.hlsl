@@ -65,6 +65,11 @@
 		return GetLitSurface(normal, position, 0, 1, 0, 0, true);
 	}
 	
+	LitSurface GetLitSurfaceMeta(float3 color, float metallic, float smoothness)
+	{
+		return GetLitSurface(0, 0, 0, color, metallic, smoothness);
+	}
+	
 	void PremultiplyAlpha(inout LitSurface s, inout float alpha)
 	{
 		s.diffuse *= alpha;
