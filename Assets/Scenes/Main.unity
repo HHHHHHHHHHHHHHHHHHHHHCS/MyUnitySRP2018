@@ -238,6 +238,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &39925258
 MeshRenderer:
@@ -409,6 +410,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &64395268
 MeshRenderer:
@@ -626,7 +628,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &110014285
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -768,6 +770,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &172544984
 GameObject:
@@ -1278,7 +1281,7 @@ Light:
   m_CullingMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_Lightmapping: 2
+  m_Lightmapping: 4
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
@@ -1462,12 +1465,13 @@ GameObject:
   - component: {fileID: 259742664}
   - component: {fileID: 259742666}
   - component: {fileID: 259742665}
+  - component: {fileID: 259742667}
   m_Layer: 0
   m_Name: Sphere (4)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &259742664
 Transform:
@@ -1477,7 +1481,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 259742663}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.05, y: 1.31, z: -1.37}
+  m_LocalPosition: {x: 2.05, y: 1.26, z: -1.37}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 307338065}
@@ -1529,6 +1533,23 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 259742663}
   m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &259742667
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 259742663}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b66cdfdcb24a09746b7578659a316022, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  color: {r: 1, g: 1, b: 1, a: 1}
+  metallic: 0
+  smoothness: 0.5
+  pulseEmissionFreqency: 1
+  emissionColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &279384077
 GameObject:
   m_ObjectHideFlags: 0
@@ -1545,8 +1566,8 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
-  m_IsActive: 1
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
 --- !u!4 &279384078
 Transform:
   m_ObjectHideFlags: 0
@@ -1623,8 +1644,8 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
-  m_IsActive: 1
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
 --- !u!4 &293295634
 Transform:
   m_ObjectHideFlags: 0
@@ -1699,7 +1720,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &307338065
 Transform:
@@ -1771,6 +1792,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &310734511
 MeshRenderer:
@@ -1910,6 +1932,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &344165432
 GameObject:
@@ -1927,7 +1950,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &344165433
 Transform:
@@ -1937,7 +1960,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 344165432}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.958, y: 0.912, z: -2.175}
+  m_LocalPosition: {x: 0.86, y: 0.912, z: -2.175}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 307338065}
@@ -1976,7 +1999,7 @@ MeshRenderer:
   m_MinimumChartSize: 4
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 111300000, guid: ff5121e77f00f7d4e853b3cbb59b2eb3,
+  m_LightmapParameters: {fileID: 111300000, guid: aba327eae200e5c428fb2c5cd54ca8dd,
     type: 2}
   m_SortingLayerID: 0
   m_SortingLayer: 0
@@ -2585,8 +2608,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 534669902}
-  m_LocalRotation: {x: -0.36583862, y: -0.51142555, z: 0.2539853, w: -0.73491335}
-  m_LocalPosition: {x: -1.879952, y: 5.004262, z: -3.412323}
+  m_LocalRotation: {x: -0.28538594, y: -0.52800095, z: 0.19359149, w: -0.77607495}
+  m_LocalPosition: {x: -3.5509145, y: 2.8740788, z: -4.83431}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
@@ -2685,6 +2708,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &598103297
 GameObject:
@@ -4084,6 +4108,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &1048104661
 GameObject:
@@ -4133,6 +4158,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &1048104664
 MeshRenderer:
@@ -4657,7 +4683,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &1256853642
 Transform:
@@ -4706,7 +4732,7 @@ MeshRenderer:
   m_MinimumChartSize: 4
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 111300000, guid: ff5121e77f00f7d4e853b3cbb59b2eb3,
+  m_LightmapParameters: {fileID: 111300000, guid: aba327eae200e5c428fb2c5cd54ca8dd,
     type: 2}
   m_SortingLayerID: 0
   m_SortingLayer: 0
@@ -4812,7 +4838,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &1362696866
 Transform:
@@ -4982,7 +5008,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &1391272883
 Transform:
@@ -5305,6 +5331,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &1508910780
 MeshRenderer:
@@ -5521,6 +5548,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &1557645210
 GameObject:
@@ -5692,6 +5720,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &1611410775
 GameObject:
@@ -6501,6 +6530,7 @@ MonoBehaviour:
   color: {r: 0, g: 0, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &1714749976
 GameObject:
@@ -6550,6 +6580,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &1714749979
 MeshRenderer:
@@ -6612,7 +6643,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!220 &1722380949
 LightProbeGroup:
   m_ObjectHideFlags: 0
@@ -6922,6 +6953,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 1
   smoothness: 1
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &1920376201
 GameObject:
@@ -7125,6 +7157,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.04
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!23 &1970284889
 MeshRenderer:
@@ -7495,6 +7528,7 @@ MonoBehaviour:
   color: {r: 1, g: 1, b: 1, a: 1}
   metallic: 0.5
   smoothness: 0.5
+  pulseEmissionFreqency: 0
   emissionColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &2058278437
 GameObject:
@@ -7884,7 +7918,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 4294967295
+  m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &2131731424
 Transform:

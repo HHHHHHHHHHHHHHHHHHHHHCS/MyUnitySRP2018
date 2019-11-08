@@ -36,7 +36,6 @@
 			//法向量 取消 非均匀缩放的 支持
 			//#pragma instancing_options assumeuniformscaling
 			
-			//TODO:
 			#pragma shader_feature _CLIPPING_ON
 			#pragma shader_feature _RECEIVE_SHADOWS
 			#pragma shader_feature _PREMULTIPLY_ALPHA
@@ -45,6 +44,8 @@
 			#pragma multi_compile _ _SHADOWS_HARD
 			#pragma multi_compile _ _SHADOWS_SOFT
 			#pragma multi_compile _ LIGHTMAP_ON
+			#pragma multi_compile _ DYNAMICLIGHTMAP_ON
+
 			
 			#pragma vertex LitPassVertex
 			#pragma fragment LitPassFragment

@@ -2,12 +2,16 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+using UnityEngine.Experimental.GlobalIllumination;
+using LightType = UnityEngine.LightType;
 using Conditional = System.Diagnostics.ConditionalAttribute;
+using Lightmapping = UnityEngine.Experimental.GlobalIllumination.Lightmapping;
 
 public class MyPipeline : RenderPipeline
 {
@@ -104,14 +108,20 @@ public class MyPipeline : RenderPipeline
         syncGameCamera = _syncGameCamera;
         SceneView.onSceneGUIDelegate += OnSceneView;
 #endif
-    }
 
-    public override void Dispose()
-    {
 #if UNITY_EDITOR
-        if (SceneView.onSceneGUIDelegate != null) SceneView.onSceneGUIDelegate -= OnSceneView;
+        Lightmapping.SetDelegate(lightmappingLightDelegate);
 #endif
     }
+
+#if UNITY_EDITOR
+    public override void Dispose()
+    {
+        base.Dispose();
+        if (SceneView.onSceneGUIDelegate != null) SceneView.onSceneGUIDelegate -= OnSceneView;
+        Lightmapping.ResetDelegate();
+    }
+#endif
 
 #if UNITY_EDITOR
     private void OnSceneView(SceneView view)
@@ -657,4 +667,49 @@ public class MyPipeline : RenderPipeline
         context.DrawRenderers(
             cull.visibleRenderers, ref drawSettings, filterSettings);
     }
+
+#if UNITY_EDITOR
+    private static Lightmapping.RequestLightsDelegate lightmappingLightDelegate =
+        (Light[] inputLights, NativeArray<LightDataGI> outputLights) =>
+        {
+            LightDataGI lightData = new LightDataGI();
+            for (int i = 0; i < inputLights.Length; i++)
+            {
+                Light light = inputLights[i];
+                switch (light.type)
+                {
+                    case LightType.Directional:
+                        //必须显式
+                        var directionalLight = new DirectionalLight();
+                        //提取光的信息
+                        LightmapperUtils.Extract(light, ref directionalLight);
+                        //把信息初始化进去
+                        lightData.Init(ref directionalLight);
+                        break;
+                    case LightType.Point:
+                        var pointLight = new PointLight();
+                        LightmapperUtils.Extract(light, ref pointLight);
+                        lightData.Init(ref pointLight);
+                        break;
+                    case LightType.Spot:
+                        var spotLight = new SpotLight();
+                        LightmapperUtils.Extract(light, ref spotLight);
+                        lightData.Init(ref spotLight);
+                        break;
+                    case LightType.Area:
+                        var rectangleLight = new RectangleLight();
+                        LightmapperUtils.Extract(light, ref rectangleLight);
+                        lightData.Init(ref rectangleLight);
+                        break;
+                    default:
+                        lightData.InitNoBake(light.GetInstanceID());
+                        break;
+                }
+
+                //告诉Unity 烘焙用哪种衰减
+                lightData.falloff = FalloffType.InverseSquared;
+                outputLights[i] = lightData;
+            }
+        };
+#endif
 }

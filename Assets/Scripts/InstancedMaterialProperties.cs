@@ -17,12 +17,46 @@ public class InstancedMaterialProperties : MonoBehaviour
 
     [SerializeField, Range(0f, 1f)] private float smoothness = 0.5f;
 
+    [SerializeField] private float pulseEmissionFreqency;
+
     [SerializeField, ColorUsage(false, true)]
     private Color emissionColor = Color.black;
+
+    private MeshRenderer _meshRenderer;
+
+    private MeshRenderer MeshRenderer
+    {
+        get
+        {
+            if (_meshRenderer == null)
+            {
+                _meshRenderer = GetComponent<MeshRenderer>();
+            }
+
+            return _meshRenderer;
+        }
+    }
 
     private void Awake()
     {
         OnValidate();
+
+        if (pulseEmissionFreqency <= 0f)
+        {
+            enabled = false;
+        }
+    }
+
+    private void Update()
+    {
+        Color originalEmissionColor = emissionColor;
+        emissionColor *= 0.5f +
+                         0.5f * Mathf.Cos(2f * Mathf.PI * pulseEmissionFreqency * Time.time);
+        OnValidate();
+        //MeshRenderer.UpdateGIMaterials();
+        //因为我们只改变了一个自发光颜色  所以没有必要全部重新刷新
+        DynamicGI.SetEmissive(MeshRenderer, emissionColor);
+        emissionColor = originalEmissionColor;
     }
 
     private void OnValidate()
@@ -36,6 +70,8 @@ public class InstancedMaterialProperties : MonoBehaviour
         propertyBlock.SetFloat(metallicID, metallic);
         propertyBlock.SetFloat(smoothnessID, smoothness);
         propertyBlock.SetColor(emissionColorID, emissionColor);
-        GetComponent<MeshRenderer>().SetPropertyBlock(propertyBlock);
+        MeshRenderer.SetPropertyBlock(propertyBlock);
     }
+
+
 }

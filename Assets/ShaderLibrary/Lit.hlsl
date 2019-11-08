@@ -28,19 +28,19 @@
 	float4 unity_SpecCube0_ProbePosition, unity_SpecCube0_HDR;
 	float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
 	float4 unity_SpecCube1_ProbePosition, unity_SpecCube1_HDR;
-	float4 unity_LightmapST;
+	//下面这些不放在实例化 是因为这个是在每次绘制的时候启作用   如果没有开启实例化则会被跳过
+	float4 unity_LightmapST, unity_DynamicLightmapST;
 	float4 unity_SHAr, unity_SHAg, unity_SHAb;
 	float4 unity_SHBr, unity_SHBg, unity_SHBb;
 	float4 unity_SHC;
 	CBUFFER_END
 	
-	CBUFFER_START(UnityProbeVolume)
-	//LPPV 其实也可以加入都实例化里面
-	float4 unity_ProbeVolumeParams;
-	float4x4 unity_ProbeVolumeWorldToObject;
-	float3 unity_ProbeVolumeSizeInv;
-	float3 unity_ProbeVolumeMin;
+	CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	float _Cutoff;
 	CBUFFER_END
+	
+	
 	
 	
 	#define MAX_VISIBLE_LIGHTS 16
@@ -64,10 +64,16 @@
 	float _CascadedShadowStrength;
 	CBUFFER_END
 	
-	CBUFFER_START(UnityPerMaterial)
-	float4 _MainTex_ST;
-	float _Cutoff;
+	CBUFFER_START(UnityProbeVolume)
+	//LPPV 其实也可以加入都实例化里面
+	float4 unity_ProbeVolumeParams;
+	float4x4 unity_ProbeVolumeWorldToObject;
+	float3 unity_ProbeVolumeSizeInv;
+	float3 unity_ProbeVolumeMin;
 	CBUFFER_END
+	
+	TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
+	SAMPLER(samplerunity_ProbeVolumeSH);
 	
 	//其实跟texture2D差不多 , 但是OPENGL2.0 不支持阴影深度图比较   但是我们不用支持OPENGL2.0
 	TEXTURE2D_SHADOW(_ShadowMap);
@@ -91,8 +97,20 @@
 	TEXTURE2D(unity_DynamicLightmap);
 	SAMPLER(samplerunity_DynamicLightmap);
 	
-	TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
-	SAMPLER(samplerunity_ProbeVolumeSH);
+	#define UNITY_MATRIX_M unity_ObjectToWorld
+	#define UNITY_MATRIX_I_M unity_WorldToObject
+	
+	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
+	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+	
+	//实例化会覆盖一些参数  所以一些参数没有加入到实例化里面
+	UNITY_INSTANCING_BUFFER_START(PerInstance)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+	UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
+	UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _EmissionColor)
+	UNITY_INSTANCING_BUFFER_END(PerInstance)
+	
 	
 	//box reflection probe 校准
 	float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition, float4 boxMin, float4 boxMax)
@@ -108,28 +126,13 @@
 		return direction;
 	}
 	
-	float3 ReflectEnvironment(LitSurface s, float3 environment)
-	{
-		if(s.perfectDiffuser)
-		{
-			return 0;
-		}
-		
-		environment *= s.specular;
-		environment /= s.roughness * s.roughness + 1.0;
-		
-		float fresnel = Pow4(1.0 - saturate(dot(s.normal, s.viewDir)));
-		environment *= lerp(s.specular, s.fresnelStrength, fresnel);
-		return environment;
-	}
-	
 	float3 SampleEnvironment(LitSurface s)
 	{
 		float3 reflectVector = reflect(-s.viewDir, s.normal);
 		float mip = PerceptualRoughnessToMipmapLevel(s.perceptualRoughness);
 		
 		float3 uvw = BoxProjection(reflectVector, s.position, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
-		float4 sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, 0);
+		float4 sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, mip);
 		float3 color = DecodeHDREnvironment(sample, unity_SpecCube0_HDR);
 		
 		//min.w 存的是 混合权重
@@ -142,6 +145,51 @@
 		}
 		
 		return color;
+	}
+	
+	
+	float3 SampleLightmap(float2 uv)
+	{
+		//以为在顶点中已经进行 ST 缩放了  所以这里片元不用了
+		float4 offset = float4(1, 1, 0, 0);
+		bool isLDR = true;
+		#if defined(UNITY_LIGHTMAP_FULL_HDR)
+			isLDR = false;
+		#endif
+		//HDR的解析编码
+		float4 hdrDecode = float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0);
+		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv, offset, isLDR, hdrDecode);
+	}
+	
+	float3 SampleDynamicLightmap(float2 uv)
+	{
+		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_DynamicLightmap, samplerunity_DynamicLightmap),
+		uv, float4(1, 1, 0, 0), false, float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0));
+	}
+	
+	float3 SampleLightProbes(LitSurface s)
+	{
+		//.x代表是否启用了ProbeVolume
+		if (unity_ProbeVolumeParams.x)
+		{
+			return SampleProbeVolumeSH4(
+				TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),
+				s.position, s.normal, unity_ProbeVolumeWorldToObject, unity_ProbeVolumeParams.y,
+				unity_ProbeVolumeParams.z, unity_ProbeVolumeMin, unity_ProbeVolumeSizeInv
+			);
+		}
+		else
+		{
+			float4 coefficients[7];
+			coefficients[0] = unity_SHAr;
+			coefficients[1] = unity_SHAg;
+			coefficients[2] = unity_SHAb;
+			coefficients[3] = unity_SHBr;
+			coefficients[4] = unity_SHBg;
+			coefficients[5] = unity_SHBb;
+			coefficients[6] = unity_SHC;
+			return max(0.0, SampleSH9(coefficients, s.normal));
+		}
 	}
 	
 	float DistanceToCameraSqr(float3 worldPos)
@@ -302,63 +350,10 @@
 		return color * lightColor;
 	}
 	
-	float3 SampleLightmap(float2 uv)
-	{
-		//以为在顶点中已经进行 ST 缩放了  所以这里片元不用了
-		float4 offset = float4(1, 1, 0, 0);
-		bool isLDR = true;
-		#if defined(UNITY_LIGHTMAP_FULL_HDR)
-			isLDR = false;
-		#endif
-		//HDR的解析编码
-		float4 hdrDecode = float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0);
-		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv, offset, isLDR, hdrDecode);
-	}
 	
-	float3 SampleLightProbes(LitSurface s)
-	{
-		//.x代表是否启用了ProbeVolume
-		if (unity_ProbeVolumeParams.x)
-		{
-			return SampleProbeVolumeSH4(
-				TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),
-				s.position, s.normal, unity_ProbeVolumeWorldToObject, unity_ProbeVolumeParams.y,
-				unity_ProbeVolumeParams.z, unity_ProbeVolumeMin, unity_ProbeVolumeSizeInv
-			);
-		}
-		else
-		{
-			float4 coefficients[7];
-			coefficients[0] = unity_SHAr;
-			coefficients[1] = unity_SHAg;
-			coefficients[2] = unity_SHAb;
-			coefficients[3] = unity_SHBr;
-			coefficients[4] = unity_SHBg;
-			coefficients[5] = unity_SHBb;
-			coefficients[6] = unity_SHC;
-			return max(0.0, SampleSH9(coefficients, s.normal));
-		}
-	}
 	
-	float3 SampleDynamicLightmap(float2 uv)
-	{
-		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_DynamicLightmap, samplerunity_DynamicLightmap),
-		uv, float4(1, 1, 0, 0), false, float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0));
-	}
 	
-	#define UNITY_MATRIX_M unity_ObjectToWorld
-	#define UNITY_MATRIX_I_M unity_WorldToObject
 	
-	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
-	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
-	
-	//实例化会覆盖一些参数  所以一些参数没有加入到实例化里面
-	UNITY_INSTANCING_BUFFER_START(PerInstance)
-	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
-	UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
-	UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
-	UNITY_DEFINE_INSTANCED_PROP(float4, _EmissionColor)
-	UNITY_INSTANCING_BUFFER_END(PerInstance)
 	
 	struct VertexInput
 	{
@@ -366,6 +361,7 @@
 		float3 normal: NORMAL;
 		float2 uv: TEXCOORD0;
 		float2 lightmapUV: TEXCOORD1;
+		float2 dynamicLightmapUV: TEXCOORD2;
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -379,6 +375,9 @@
 		#if defined(LIGHTMAP_ON)
 			float2 lightmapUV: TEXCOORD4;
 		#endif
+		#if defined(DYNAMICLIGHTMAP_ON)
+			float2 dynamicLightmapUV: TEXCOORD5;
+		#endif
 		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 	
@@ -386,7 +385,13 @@
 	float3 GlobalIllumination(VertexOutput input, LitSurface surface)
 	{
 		#if defined(LIGHTMAP_ON)
-			return SampleLightmap(input.lightmapUV);
+			float3 gi = SampleLightmap(input.lightmapUV);
+			#if defined(DYNAMICLIGHTMAP_ON)
+				gi += SampleDynamicLightmap(input.dynamicLightmapUV);
+			#endif
+			return gi;
+		#elif defined(DYNAMICLIGHTMAP_ON)
+			return SampleDynamicLightmap(input.dynamicLightmapUV);
 		#else
 			return SampleLightProbes(surface);
 		#endif
@@ -399,12 +404,12 @@
 		UNITY_TRANSFER_INSTANCE_ID(input, output);
 		float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
 		output.clipPos = mul(unity_MatrixVP, worldPos);
-		output.worldPos = worldPos.xyz;
 		#if defined(UNITY_ASSUME_UNIFORM_SCALING)
 			output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
 		#else
 			output.normal = normalize(mul(input.normal, (float3x3)UNITY_MATRIX_I_M));
 		#endif
+		output.worldPos = worldPos.xyz;
 		
 		LitSurface surface = GetLitSurfaceVertex(output.normal, output.worldPos);
 		//第二组光因为影响不严重 所以可以在顶点进行计算
@@ -419,6 +424,9 @@
 		output.uv = TRANSFORM_TEX(input.uv, _MainTex);
 		#if defined(LIGHTMAP_ON)
 			output.lightmapUV = input.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;
+		#endif
+		#if defined(DYNAMICLIGHTMAP_ON)
+			output.dynamicLightmapUV = input.dynamicLightmapUV * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
 		#endif
 		return output;
 	}

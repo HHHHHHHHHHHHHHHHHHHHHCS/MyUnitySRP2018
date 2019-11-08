@@ -17,8 +17,6 @@
 		s.position = position;
 		s.viewDir = viewDir;
 		s.diffuse = color;
-		s.specular = 0.04;
-		s.perceptualRoughness = 1.0 - smoothness;
 		if (perfectDiffuser)
 		{
 			s.reflectivity = 0.0;
@@ -34,10 +32,27 @@
 		}
 		
 		s.perfectDiffuser = perfectDiffuser;
+		s.perceptualRoughness = 1.0 - smoothness;
 		s.roughness = s.perceptualRoughness * s.perceptualRoughness;
 		//菲尼尔由smoothness 和 metallic 决定
 		s.fresnelStrength = saturate(smoothness + s.reflectivity);
 		return s;
+	}
+	
+	LitSurface GetLitSurfaceVertex(float3 normal, float3 position)
+	{
+		return GetLitSurface(normal, position, 0, 1, 0, 0, true);
+	}
+	
+	LitSurface GetLitSurfaceMeta(float3 color, float metallic, float smoothness)
+	{
+		return GetLitSurface(0, 0, 0, color, metallic, smoothness);
+	}
+	
+	void PremultiplyAlpha(inout LitSurface s, inout float alpha)
+	{
+		s.diffuse *= alpha;
+		alpha = lerp(alpha, 1, s.reflectivity);
 	}
 	
 	float3 LightSurface(LitSurface s, float3 lightDir)
@@ -60,20 +75,17 @@
 		return color * saturate(dot(s.normal, lightDir));
 	}
 	
-	LitSurface GetLitSurfaceVertex(float3 normal, float3 position)
+	float3 ReflectEnvironment(LitSurface s, float3 environment)
 	{
-		return GetLitSurface(normal, position, 0, 1, 0, 0, true);
-	}
-	
-	LitSurface GetLitSurfaceMeta(float3 color, float metallic, float smoothness)
-	{
-		return GetLitSurface(0, 0, 0, color, metallic, smoothness);
-	}
-	
-	void PremultiplyAlpha(inout LitSurface s, inout float alpha)
-	{
-		s.diffuse *= alpha;
-		alpha = lerp(alpha, 1, s.reflectivity);
+		if(s.perfectDiffuser)
+		{
+			return 0;
+		}
+		
+		float fresnel = Pow4(1.0 - saturate(dot(s.normal, s.viewDir)));
+		environment *= lerp(s.specular, s.fresnelStrength, fresnel);
+		environment /= s.roughness * s.roughness + 1.0;
+		return environment;
 	}
 	
 #endif // MYRP_LIGHTING_INCLUDED

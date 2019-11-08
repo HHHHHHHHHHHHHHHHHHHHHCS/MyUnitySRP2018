@@ -10,16 +10,16 @@
 	CBUFFER_START(UnityPerDraw)
 	float4x4 unity_ObjectToWorld;
 	CBUFFER_END
-	
-	CBUFFER_START(_ShadowBuffer)
-	float _ShadowBias;
-	CBUFFER_END
+
 	
 	CBUFFER_START(UnityPerMaterial)
 	float4 _MainTex_ST;
 	float _Cutoff;
 	CBUFFER_END
 	
+	CBUFFER_START(_ShadowCasterBuffer)
+	float _ShadowBias;
+	CBUFFER_END
 	TEXTURE2D(_MainTex);
 	SAMPLER(sampler_MainTex);
 	
@@ -58,7 +58,7 @@
 			output.clipPos.z -= _ShadowBias;
 			output.clipPos.z = min(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);
 		#else
-			output.clipPos += _ShadowBias;
+			output.clipPos.z += _ShadowBias;
 			output.clipPos.z = max(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);
 		#endif
 		
