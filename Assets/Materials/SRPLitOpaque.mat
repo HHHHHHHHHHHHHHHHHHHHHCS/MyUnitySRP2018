@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: SRPLitRed
+  m_Name: SRPLitOpaque
   m_Shader: {fileID: 4800000, guid: fb525af7f9d3ce742abf45e30a517946, type: 3}
   m_ShaderKeywords: _CLIPPING_OFF _RECEIVE_SHADOWS
   m_LightmapFlags: 2
