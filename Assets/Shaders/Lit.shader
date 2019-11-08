@@ -36,6 +36,7 @@
 			//法向量 取消 非均匀缩放的 支持
 			//#pragma instancing_options assumeuniformscaling
 			
+			//TODO:
 			#pragma shader_feature _CLIPPING_ON
 			#pragma shader_feature _RECEIVE_SHADOWS
 			#pragma shader_feature _PREMULTIPLY_ALPHA

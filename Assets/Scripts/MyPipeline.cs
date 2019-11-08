@@ -230,7 +230,9 @@ public class MyPipeline : RenderPipeline
         }
 
         drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes
-                                              | RendererConfiguration.PerObjectLightmaps;
+                                              | RendererConfiguration.PerObjectLightmaps
+                                              | RendererConfiguration.PerObjectLightProbe
+                                              | RendererConfiguration.PerObjectLightProbeProxyVolume;
 
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
         //因为 Unity 更喜欢将对象空间化地分组以减少overdraw

@@ -29,6 +29,17 @@
 	float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
 	float4 unity_SpecCube1_ProbePosition, unity_SpecCube1_HDR;
 	float4 unity_LightmapST;
+	float4 unity_SHAr, unity_SHAg, unity_SHAb;
+	float4 unity_SHBr, unity_SHBg, unity_SHBb;
+	float4 unity_SHC;
+	CBUFFER_END
+	
+	CBUFFER_START(UnityProbeVolume)
+	//LPPV 其实也可以加入都实例化里面
+	float4 unity_ProbeVolumeParams;
+	float4x4 unity_ProbeVolumeWorldToObject;
+	float3 unity_ProbeVolumeSizeInv;
+	float3 unity_ProbeVolumeMin;
 	CBUFFER_END
 	
 	
@@ -76,6 +87,12 @@
 	
 	TEXTURE2D(unity_Lightmap);
 	SAMPLER(samplerunity_Lightmap);
+	
+	TEXTURE2D(unity_DynamicLightmap);
+	SAMPLER(samplerunity_DynamicLightmap);
+	
+	TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
+	SAMPLER(samplerunity_ProbeVolumeSH);
 	
 	//box reflection probe 校准
 	float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition, float4 boxMin, float4 boxMax)
@@ -298,12 +315,44 @@
 		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv, offset, isLDR, hdrDecode);
 	}
 	
+	float3 SampleLightProbes(LitSurface s)
+	{
+		//.x代表是否启用了ProbeVolume
+		if (unity_ProbeVolumeParams.x)
+		{
+			return SampleProbeVolumeSH4(
+				TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),
+				s.position, s.normal, unity_ProbeVolumeWorldToObject, unity_ProbeVolumeParams.y,
+				unity_ProbeVolumeParams.z, unity_ProbeVolumeMin, unity_ProbeVolumeSizeInv
+			);
+		}
+		else
+		{
+			float4 coefficients[7];
+			coefficients[0] = unity_SHAr;
+			coefficients[1] = unity_SHAg;
+			coefficients[2] = unity_SHAb;
+			coefficients[3] = unity_SHBr;
+			coefficients[4] = unity_SHBg;
+			coefficients[5] = unity_SHBb;
+			coefficients[6] = unity_SHC;
+			return max(0.0, SampleSH9(coefficients, s.normal));
+		}
+	}
+	
+	float3 SampleDynamicLightmap(float2 uv)
+	{
+		return SampleSingleLightmap(TEXTURE2D_PARAM(unity_DynamicLightmap, samplerunity_DynamicLightmap),
+		uv, float4(1, 1, 0, 0), false, float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0));
+	}
+	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
 	#define UNITY_MATRIX_I_M unity_WorldToObject
 	
 	//包含文件是 UnityInstancing.hlsl，因为它可能重新定义UNITY_MATRIX_M,所以我们必须在自己定义宏之后包含它。
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 	
+	//实例化会覆盖一些参数  所以一些参数没有加入到实例化里面
 	UNITY_INSTANCING_BUFFER_START(PerInstance)
 	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
 	UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
@@ -334,12 +383,13 @@
 	};
 	
 	
-	float3 GlobalIllumination(VertexOutput input)
+	float3 GlobalIllumination(VertexOutput input, LitSurface surface)
 	{
 		#if defined(LIGHTMAP_ON)
 			return SampleLightmap(input.lightmapUV);
+		#else
+			return SampleLightProbes(surface);
 		#endif
-		return 0;
 	}
 	
 	VertexOutput LitPassVertex(VertexInput input)
@@ -408,7 +458,7 @@
 		
 		color += ReflectEnvironment(surface, SampleEnvironment(surface));
 		
-		color = GlobalIllumination(input) * surface.diffuse;
+		color += GlobalIllumination(input, surface) * surface.diffuse;
 		
 		color += UNITY_ACCESS_INSTANCED_PROP(PerInstance, _EmissionColor).rgb;
 		
