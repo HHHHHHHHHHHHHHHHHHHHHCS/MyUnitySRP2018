@@ -192,15 +192,28 @@
 		}
 	}
 	
-	float DistanceToCameraSqr(float3 worldPos)
+	float RealtimeToBakedShadowsInterpolator(float3 worldPos)
 	{
-		float3 cameraToFragment = worldPos - _WorldSpaceCameraPos;
-		return dot(cameraToFragment, cameraToFragment);
+		float d = distance(worldPos, _WorldSpaceCameraPos);
+		//根据到摄像机的距离(大,最后大) 和 shadowDistance(大,最后小) 进行衰减
+		return saturate(d * _GlobalShadowData.y + _GlobalShadowData.z);
+	}
+	
+	float MixRealtimeAndBakedShadowAttenuation(float realtime, float3 worldPos)
+	{
+		float t = RealtimeToBakedShadowsInterpolator(worldPos);
+		float fadedRealtime = saturate(realtime + t);
+		return fadedRealtime;
+	}
+	
+	bool SkipRealtimeShadows(float3 worldPos)
+	{
+		return RealtimeToBakedShadowsInterpolator(worldPos) >= 1.0;
 	}
 	
 	float HardShadowAttenuation(float4 shadowPos, bool cascade = false)
 	{
-		if(cascade)
+		if (cascade)
 		{
 			return SAMPLE_TEXTURE2D_SHADOW(_CascadedShadowMap, sampler_CascadedShadowMap, shadowPos.xyz);
 		}
@@ -235,8 +248,7 @@
 			return 1.0;
 		#endif
 		
-		if(_ShadowData[index].x <= 0
-		|| DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
+		if(_ShadowData[index].x <= 0 || SkipRealtimeShadows(worldPos))
 		{
 			return 1.0;
 		}
@@ -283,8 +295,8 @@
 			return 1.0;
 		#endif
 		
-		//太远不计算阴影
-		if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
+		//不计算太远阴影
+		if (SkipRealtimeShadows(worldPos))
 		{
 			return 1.0;
 		}
@@ -309,9 +321,8 @@
 		return lerp(1, attenuation, _CascadedShadowStrength);
 	}
 	
-	float3 MainLight(LitSurface s)
+	float3 MainLight(LitSurface s, float shadowAttenuation)
 	{
-		float shadowAttenuation = CascadedShadowAttenuation(s.position);
 		float3 lightColor = _VisibleLightColors[0].rgb;
 		float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
 		float3 color = LightSurface(s, lightDirection);
@@ -454,13 +465,14 @@
 		float3 color = input.vertexLighting * surface.diffuse;
 		
 		#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
-			color += MainLight(surface);
+			float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(CascadedShadowAttenuation(surface.position), surface.position);
+			color += MainLight(surface, shadowAttenuation);
 		#endif
 		
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)
 		{
 			int lightIndex = unity_4LightIndices0[i];
-			float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);
+			float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(ShadowAttenuation(lightIndex, surface.position), surface.position);
 			color += GenericLight(lightIndex, surface, shadowAttenuation);
 		}
 		

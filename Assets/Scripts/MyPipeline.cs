@@ -62,6 +62,7 @@ public class MyPipeline : RenderPipeline
 
     private RenderTexture shadowMap, cascadedShadowMap;
     private float shadowDistance;
+    private Vector4 globalShadowData;
     private int shadowMapSize;
     private Vector4[] shadowData = new Vector4[maxVisibleLights];
     private Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
@@ -77,7 +78,7 @@ public class MyPipeline : RenderPipeline
 #endif
 
     public MyPipeline(bool dynamicBatching, bool instancing
-        , int _shadowMapSize, float _shadowDistance
+        , int _shadowMapSize, float _shadowDistance , float _shadowFadeRange
         , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
@@ -101,6 +102,7 @@ public class MyPipeline : RenderPipeline
 
         shadowMapSize = _shadowMapSize;
         shadowDistance = _shadowDistance;
+        globalShadowData.y = 1f / _shadowFadeRange;
         shadowCascades = _shadowCascades;
         shadowCascadeSplit = _shadowCascadeSplit;
 
@@ -218,6 +220,8 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.SetGlobalVectorArray(visibleLightAttenuationsID, visibleLightAttenuations);
         cameraBuffer.SetGlobalVectorArray(visibleLightSpotDirectionsID, visibleLightSpotDirections);
 
+        globalShadowData.z = 1f - cullingParameters.shadowDistance * globalShadowData.y;
+        cameraBuffer.SetGlobalVector(globalShadowDataID, globalShadowData);
         context.ExecuteCommandBuffer(cameraBuffer);
         cameraBuffer.Clear();
 
@@ -398,8 +402,6 @@ public class MyPipeline : RenderPipeline
         float tileSize = shadowMapSize / 2;
         cascadedShadowMap = SetShadowRenderTarget();
         shadowBuffer.BeginSample("Render Main Shadows");
-        shadowBuffer.SetGlobalVector(
-            globalShadowDataID, new Vector4(0f, shadowDistance * shadowDistance));
 
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
@@ -475,11 +477,11 @@ public class MyPipeline : RenderPipeline
         //所以这里用图片分割成4*4块
         float tileSize = shadowMapSize / split;
         float tileScale = 1f / split;
+        globalShadowData.x = tileScale;
 
         shadowMap = SetShadowRenderTarget();
 
         shadowBuffer.BeginSample("Render Shadows");
-        shadowBuffer.SetGlobalVector(globalShadowDataID, new Vector4(tileScale, shadowDistance * shadowDistance));
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 

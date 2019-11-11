@@ -35,6 +35,9 @@ public class MyPipelineAsset : RenderPipelineAsset
     //阴影的距离
     [SerializeField] private float shadowDistance = 100f;
 
+    //阴影距离渐变
+    [SerializeField, Range(0.01f, 2f)] private float shadowFadeRange = 1f;
+
     //阴影级联
     [SerializeField] private ShadowCascades shadowCascades = ShadowCascades.Four;
 
@@ -54,7 +57,7 @@ public class MyPipelineAsset : RenderPipelineAsset
             : new Vector3(twoCascadesSplit, 0f);
 
         return new MyPipeline(dynamicBatching, instancing
-            , (int) shadowMapSize, shadowDistance
+            , (int) shadowMapSize, shadowDistance , shadowFadeRange
             , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
     }
 }
