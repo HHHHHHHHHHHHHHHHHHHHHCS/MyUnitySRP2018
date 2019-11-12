@@ -21,6 +21,8 @@ public class MyPipeline : RenderPipeline
     private const string shadowHardKeyword = "_SHADOWS_HARD";
     private const string cascadedShadowsHardKeyword = "_CASCADED_SHADOWS_HARD";
     private const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";
+    private const string shadowmaskKeyword = "_SHADOWMASK";
+    private const string distanceShadowMaskKeyword = "_DISTANCE_SHADOWMASK";
 
     private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
@@ -38,8 +40,18 @@ public class MyPipeline : RenderPipeline
     private static int cascadedShadowMapSizedID = Shader.PropertyToID("_CascadedShadowMapSize");
     private static int cascadedShadowStrengthID = Shader.PropertyToID("_CascadedShadowStrength");
     private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
+    private static int visibleLightOcclusionMaskID = Shader.PropertyToID("_VisibleLightOcclusionMasks");
 
     private static Camera mainCamera;
+
+    private static Vector4[] occlusionMasks =
+    {
+        new Vector4(-1f, 0f, 0f, 0f),
+        new Vector4(1f, 0f, 0f, 0f),
+        new Vector4(0f, 1f, 0f, 0f),
+        new Vector4(0f, 0f, 1f, 0f),
+        new Vector4(0f, 0f, 0f, 1f),
+    };
 
     private readonly CommandBuffer cameraBuffer = new CommandBuffer()
     {
@@ -70,15 +82,16 @@ public class MyPipeline : RenderPipeline
     private int shadowCascades;
     private Vector3 shadowCascadeSplit;
     private Matrix4x4[] worldToShadowCascadeMatrices = new Matrix4x4[5];
-    Vector4[] cascadeCullingSpheres = new Vector4[4];
-
+    private Vector4[] cascadeCullingSpheres = new Vector4[4];
     private bool mainLightExists;
+    private Vector4[] visibleLightOcclusionMasks = new Vector4[maxVisibleLights];
+
 #if UNITY_EDITOR
     private readonly bool syncGameCamera;
 #endif
 
     public MyPipeline(bool dynamicBatching, bool instancing
-        , int _shadowMapSize, float _shadowDistance , float _shadowFadeRange
+        , int _shadowMapSize, float _shadowDistance, float _shadowFadeRange
         , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
@@ -219,6 +232,7 @@ public class MyPipeline : RenderPipeline
         cameraBuffer.SetGlobalVectorArray(visibleLightDirectionsOrPositionsID, visibleLightDirectionsOrPositions);
         cameraBuffer.SetGlobalVectorArray(visibleLightAttenuationsID, visibleLightAttenuations);
         cameraBuffer.SetGlobalVectorArray(visibleLightSpotDirectionsID, visibleLightSpotDirections);
+        cameraBuffer.SetGlobalVectorArray(visibleLightOcclusionMaskID, visibleLightOcclusionMasks);
 
         globalShadowData.z = 1f - cullingParameters.shadowDistance * globalShadowData.y;
         cameraBuffer.SetGlobalVector(globalShadowDataID, globalShadowData);
@@ -246,6 +260,9 @@ public class MyPipeline : RenderPipeline
         drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes
                                               | RendererConfiguration.PerObjectLightmaps
                                               | RendererConfiguration.PerObjectLightProbe
+                                              | RendererConfiguration.PerObjectLightProbeProxyVolume
+                                              | RendererConfiguration.PerObjectShadowMask
+                                              | RendererConfiguration.PerObjectOcclusionProbe
                                               | RendererConfiguration.PerObjectLightProbeProxyVolume;
 
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
@@ -291,6 +308,7 @@ public class MyPipeline : RenderPipeline
     private void ConfigureLights()
     {
         mainLightExists = false;
+        bool shadowmaskExists = false;
         shadowTileCount = 0;
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
@@ -300,6 +318,13 @@ public class MyPipeline : RenderPipeline
             Vector4 attenuation = Vector4.zero;
             attenuation.w = 1f;
             Vector4 shadow = Vector4.zero;
+
+            LightBakingOutput baking = light.light.bakingOutput;
+            visibleLightOcclusionMasks[i] = occlusionMasks[baking.occlusionMaskChannel + 1];
+            if (baking.lightmapBakeType == LightmapBakeType.Mixed)
+            {
+                shadowmaskExists |= baking.mixedLightingMode == MixedLightingMode.Shadowmask;
+            }
 
             if (light.lightType == LightType.Directional)
             {
@@ -357,6 +382,11 @@ public class MyPipeline : RenderPipeline
             visibleLightAttenuations[i] = attenuation;
             shadowData[i] = shadow;
         }
+
+        bool useDistanceShadowmask = QualitySettings.shadowmaskMode == ShadowmaskMode.DistanceShadowmask;
+        CoreUtils.SetKeyword(cameraBuffer, shadowmaskKeyword, shadowmaskExists && !useDistanceShadowmask);
+        CoreUtils.SetKeyword(cameraBuffer, distanceShadowMaskKeyword, shadowmaskExists && useDistanceShadowmask);
+
 
         //剔除额外的光 和 主光源
         if (mainLightExists || cull.visibleLights.Count > maxVisibleLights)
