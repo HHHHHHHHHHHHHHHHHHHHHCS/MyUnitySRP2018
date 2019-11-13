@@ -64,6 +64,7 @@
 	float4 _CascadedShadowMapSize;
 	float4 _GlobalShadowData;
 	float _CascadedShadowStrength;
+	float4 _SubtractiveShadowColor;
 	CBUFFER_END
 	
 	CBUFFER_START(UnityProbeVolume)
@@ -179,6 +180,8 @@
 		uv, float4(1, 1, 0, 0), false, float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0));
 	}
 	
+	
+	
 	float3 SampleLightProbes(LitSurface s)
 	{
 		//.x代表是否启用了ProbeVolume
@@ -211,7 +214,7 @@
 		return saturate(d * _GlobalShadowData.y + _GlobalShadowData.z);
 	}
 	
-	float MixRealtimeAndBakedShadowAttenuation(float realtime, float4 bakedShadows, int lightIndex, float3 worldPos)
+	float MixRealtimeAndBakedShadowAttenuation(float realtime, float4 bakedShadows, int lightIndex, float3 worldPos, bool isMainLight = false)
 	{
 		float t = RealtimeToBakedShadowsInterpolator(worldPos);
 		float fadedRealtime = saturate(realtime + t);
@@ -227,6 +230,11 @@
 		#elif defined(_DISTANCE_SHADOWMASK)
 			if(hasBakedShadows)
 			{
+				bool bakedOnly = _VisibleLightSpotDirections[lightIndex].w > 0;
+				if(!isMainLight && bakedOnly)
+				{
+					return baked;
+				}
 				return lerp(realtime, baked, t);
 			}
 		#endif
@@ -314,7 +322,7 @@
 		return dot(worldPos - s.xyz, worldPos - s.xyz) < s.w;
 	}
 	
-	float CascadedShadowAttenuation(float3 worldPos)
+	float CascadedShadowAttenuation(float3 worldPos, bool applyStrength = true)
 	{
 		#if !defined(_RECEIVE_SHADOWS)
 			return 1.0;
@@ -322,11 +330,13 @@
 			return 1.0;
 		#endif
 		
+		
 		//不计算太远阴影
 		if (SkipRealtimeShadows(worldPos))
 		{
 			return 1.0;
 		}
+		
 		
 		float4 cascadeFlags = float4(InsideCascadeCullingSphere(0, worldPos),
 		InsideCascadeCullingSphere(1, worldPos),
@@ -345,7 +355,35 @@
 			attenuation = SoftShadowAttenuation(shadowPos, true);
 		#endif
 		
-		return lerp(1, attenuation, _CascadedShadowStrength);
+		if (applyStrength)
+		{
+			return lerp(1, attenuation, _CascadedShadowStrength);
+		}
+		else
+		{
+			return attenuation;
+		}
+	}
+	
+	float3 SubtractiveLighting(LitSurface s, float3 bakedLighting)
+	{
+		float3 lightColor = _VisibleLightColors[0].rgb;
+		float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
+		float3 diffuse = lightColor * saturate(dot(lightDirection, s.normal));
+		//先计算出实时的遮蔽
+		float shadowAttenuation = saturate(
+			CascadedShadowAttenuation(s.position, false) +
+			RealtimeToBakedShadowsInterpolator(s.position)
+		);
+		//1-实时的遮蔽 = 实时发亮的
+		float3 shadowedLightGuess = diffuse * (1.0 - shadowAttenuation);
+		//烘焙发亮 - 实时发亮的 = 多少被遮蔽了(阴影颜色)
+		float3 subtractedLighting = bakedLighting - shadowedLightGuess;
+		subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);
+		//烘焙颜色 和 阴影颜色 根据 阴影强度 lerp
+		subtractedLighting = lerp(bakedLighting, subtractedLighting, _CascadedShadowStrength);
+
+		return min(bakedLighting, subtractedLighting);
 	}
 	
 	float3 MainLight(LitSurface s, float shadowAttenuation)
@@ -424,6 +462,9 @@
 	{
 		#if defined(LIGHTMAP_ON)
 			float3 gi = SampleLightmap(input.lightmapUV);
+			#if defined(_SUBTRACTIVE_LIGHTING)
+				gi = SubtractiveLighting(surface, gi);
+			#endif
 			#if defined(DYNAMICLIGHTMAP_ON)
 				gi += SampleDynamicLightmap(input.dynamicLightmapUV);
 			#endif
@@ -513,8 +554,10 @@
 		float3 color = input.vertexLighting * surface.diffuse;
 		
 		#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
-			float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(CascadedShadowAttenuation(surface.position), bakedShadows, 0, surface.position);
-			color += MainLight(surface, shadowAttenuation);
+			#if !(defined(LIGHTMAP_ON) && defined(_SUBTRACTIVE_LIGHTING))
+					float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(CascadedShadowAttenuation(surface.position), bakedShadows, 0, surface.position, true);
+				color += MainLight(surface, shadowAttenuation);
+			#endif
 		#endif
 		
 		for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i ++)

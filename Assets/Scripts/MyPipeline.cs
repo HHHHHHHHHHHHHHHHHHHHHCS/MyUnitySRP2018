@@ -23,6 +23,7 @@ public class MyPipeline : RenderPipeline
     private const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";
     private const string shadowmaskKeyword = "_SHADOWMASK";
     private const string distanceShadowMaskKeyword = "_DISTANCE_SHADOWMASK";
+    private const string subtractiveLightingKeyword = "_SUBTRACTIVE_LIGHTING";
 
     private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
@@ -33,6 +34,7 @@ public class MyPipeline : RenderPipeline
     private static int shadowBiasID = Shader.PropertyToID("_ShadowBias");
     private static int shadowDataID = Shader.PropertyToID("_ShadowData");
     private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
+    private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
     private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
     private static int globalShadowDataID = Shader.PropertyToID("_GlobalShadowData");
     private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
@@ -309,6 +311,7 @@ public class MyPipeline : RenderPipeline
     {
         mainLightExists = false;
         bool shadowmaskExists = false;
+        bool subtractiveLighting = false;
         shadowTileCount = 0;
         for (int i = 0; i < cull.visibleLights.Count && i < maxVisibleLights; i++)
         {
@@ -324,6 +327,11 @@ public class MyPipeline : RenderPipeline
             if (baking.lightmapBakeType == LightmapBakeType.Mixed)
             {
                 shadowmaskExists |= baking.mixedLightingMode == MixedLightingMode.Shadowmask;
+                if (baking.mixedLightingMode == MixedLightingMode.Subtractive)
+                {
+                    subtractiveLighting = true;
+                    cameraBuffer.SetGlobalColor(subtractiveShadowColorID, RenderSettings.subtractiveShadowColor.linear);
+                }
             }
 
             if (light.lightType == LightType.Directional)
@@ -377,6 +385,10 @@ public class MyPipeline : RenderPipeline
 
                     shadow = ConfigureShadows(i, light.light);
                 }
+                else
+                {
+                    visibleLightSpotDirections[i] = Vector4.one;
+                }
             }
 
             visibleLightAttenuations[i] = attenuation;
@@ -386,6 +398,7 @@ public class MyPipeline : RenderPipeline
         bool useDistanceShadowmask = QualitySettings.shadowmaskMode == ShadowmaskMode.DistanceShadowmask;
         CoreUtils.SetKeyword(cameraBuffer, shadowmaskKeyword, shadowmaskExists && !useDistanceShadowmask);
         CoreUtils.SetKeyword(cameraBuffer, distanceShadowMaskKeyword, shadowmaskExists && useDistanceShadowmask);
+        CoreUtils.SetKeyword(cameraBuffer, subtractiveLightingKeyword, subtractiveLighting);
 
 
         //剔除额外的光 和 主光源
