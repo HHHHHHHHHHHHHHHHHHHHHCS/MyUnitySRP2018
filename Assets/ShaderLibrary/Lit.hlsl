@@ -108,7 +108,7 @@
 	
 	//实例化 也可以实例化 SHADOWS_SHADOWMASK  不过要自己定义
 	#if !defined(LIGHTMAP_ON)
-		#if defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK)
+		#if defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK) || defined(_SUBTRACTIVE_LIGHTING)
 			#define SHADOWS_SHADOWMASK
 		#endif
 	#endif
@@ -214,6 +214,11 @@
 		return saturate(d * _GlobalShadowData.y + _GlobalShadowData.z);
 	}
 	
+	bool SkipRealtimeShadows(float3 worldPos)
+	{
+		return RealtimeToBakedShadowsInterpolator(worldPos) >= 1.0;
+	}
+	
 	float MixRealtimeAndBakedShadowAttenuation(float realtime, float4 bakedShadows, int lightIndex, float3 worldPos, bool isMainLight = false)
 	{
 		float t = RealtimeToBakedShadowsInterpolator(worldPos);
@@ -230,20 +235,28 @@
 		#elif defined(_DISTANCE_SHADOWMASK)
 			if(hasBakedShadows)
 			{
-				bool bakedOnly = _VisibleLightSpotDirections[lightIndex].w > 0;
+				bool bakedOnly = _VisibleLightSpotDirections[lightIndex].w > 0.0;
 				if(!isMainLight && bakedOnly)
 				{
 					return baked;
 				}
 				return lerp(realtime, baked, t);
 			}
+		#elif defined(_SUBTRACTIVE_LIGHTING)
+			#if !defined(LIGHTMAP_ON)
+				if(isMainLight)
+				{
+					return min(fadedRealtime, bakedShadows.x);
+				}
+			#endif
+			#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+				if(lightIndex == 0)
+				{
+					return bakedShadows.x;
+				}
+			#endif
 		#endif
 		return fadedRealtime;
-	}
-	
-	bool SkipRealtimeShadows(float3 worldPos)
-	{
-		return RealtimeToBakedShadowsInterpolator(worldPos) >= 1.0;
 	}
 	
 	float HardShadowAttenuation(float4 shadowPos, bool cascade = false)
@@ -376,13 +389,13 @@
 			RealtimeToBakedShadowsInterpolator(s.position)
 		);
 		//1-实时的遮蔽 = 实时发亮的
-		float3 shadowedLightGuess = diffuse * (1.0 - shadowAttenuation);
+		float3 shadowedLightingGuess = diffuse * (1.0 - shadowAttenuation);
 		//烘焙发亮 - 实时发亮的 = 多少被遮蔽了(阴影颜色)
-		float3 subtractedLighting = bakedLighting - shadowedLightGuess;
+		float3 subtractedLighting = bakedLighting - shadowedLightingGuess;
 		subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);
 		//烘焙颜色 和 阴影颜色 根据 阴影强度 lerp
 		subtractedLighting = lerp(bakedLighting, subtractedLighting, _CascadedShadowStrength);
-
+		
 		return min(bakedLighting, subtractedLighting);
 	}
 	
@@ -482,7 +495,7 @@
 			#if defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK)
 				return SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, input.lightmapUV);
 			#endif
-		#elif defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK)
+		#elif defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK) || defined(_SUBTRACTIVE_LIGHTING)
 			if (unity_ProbeVolumeParams.x)
 			{
 				return SampleProbeOcclusion(TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),

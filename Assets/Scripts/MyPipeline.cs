@@ -17,32 +17,35 @@ public class MyPipeline : RenderPipeline
 {
     private const int maxVisibleLights = 16;
 
-    private const string shadowSoftKeyword = "_SHADOWS_SOFT";
-    private const string shadowHardKeyword = "_SHADOWS_HARD";
+
     private const string cascadedShadowsHardKeyword = "_CASCADED_SHADOWS_HARD";
     private const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";
+	private const string shadowsHardKeyword = "_SHADOWS_HARD";
+	private const string shadowsSoftKeyword = "_SHADOWS_SOFT";
     private const string shadowmaskKeyword = "_SHADOWMASK";
-    private const string distanceShadowMaskKeyword = "_DISTANCE_SHADOWMASK";
+    private const string distanceShadowmaskKeyword = "_DISTANCE_SHADOWMASK";
     private const string subtractiveLightingKeyword = "_SUBTRACTIVE_LIGHTING";
 
-    private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
+
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
     private static int visibleLightDirectionsOrPositionsID = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
     private static int visibleLightAttenuationsID = Shader.PropertyToID("_VisibleLightAttenuations");
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
+	private static int visibleLightOcclusionMaskID = Shader.PropertyToID("_VisibleLightOcclusionMasks");
+	private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int shadowMapID = Shader.PropertyToID("_ShadowMap");
+	private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
+	private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
+	private static int worldToShadowCascadeMatricesID = Shader.PropertyToID("_WorldToShadowCascadeMatrices");
     private static int shadowBiasID = Shader.PropertyToID("_ShadowBias");
     private static int shadowDataID = Shader.PropertyToID("_ShadowData");
     private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
-    private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
-    private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
-    private static int globalShadowDataID = Shader.PropertyToID("_GlobalShadowData");
-    private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
-    private static int worldToShadowCascadeMatricesID = Shader.PropertyToID("_WorldToShadowCascadeMatrices");
     private static int cascadedShadowMapSizedID = Shader.PropertyToID("_CascadedShadowMapSize");
     private static int cascadedShadowStrengthID = Shader.PropertyToID("_CascadedShadowStrength");
+    private static int globalShadowDataID = Shader.PropertyToID("_GlobalShadowData");
     private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
-    private static int visibleLightOcclusionMaskID = Shader.PropertyToID("_VisibleLightOcclusionMasks");
+	private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
+
 
     private static Camera mainCamera;
 
@@ -208,8 +211,8 @@ public class MyPipeline : RenderPipeline
             }
             else
             {
-                cameraBuffer.DisableShaderKeyword(shadowHardKeyword);
-                cameraBuffer.DisableShaderKeyword(shadowSoftKeyword);
+                cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+                cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
             }
         }
         else
@@ -217,8 +220,8 @@ public class MyPipeline : RenderPipeline
             cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
             cameraBuffer.DisableShaderKeyword(cascadedShadowsHardKeyword);
             cameraBuffer.DisableShaderKeyword(cascadedShadowsSoftKeyword);
-            cameraBuffer.DisableShaderKeyword(shadowHardKeyword);
-            cameraBuffer.DisableShaderKeyword(shadowSoftKeyword);
+            cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+            cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
         }
 
         context.SetupCameraProperties(camera);
@@ -265,7 +268,7 @@ public class MyPipeline : RenderPipeline
                                               | RendererConfiguration.PerObjectLightProbeProxyVolume
                                               | RendererConfiguration.PerObjectShadowMask
                                               | RendererConfiguration.PerObjectOcclusionProbe
-                                              | RendererConfiguration.PerObjectLightProbeProxyVolume;
+                                              | RendererConfiguration.PerObjectOcclusionProbeProxyVolume;
 
         drawSettings.sorting.flags = SortFlags.CommonOpaque;
         //因为 Unity 更喜欢将对象空间化地分组以减少overdraw
@@ -397,7 +400,7 @@ public class MyPipeline : RenderPipeline
 
         bool useDistanceShadowmask = QualitySettings.shadowmaskMode == ShadowmaskMode.DistanceShadowmask;
         CoreUtils.SetKeyword(cameraBuffer, shadowmaskKeyword, shadowmaskExists && !useDistanceShadowmask);
-        CoreUtils.SetKeyword(cameraBuffer, distanceShadowMaskKeyword, shadowmaskExists && useDistanceShadowmask);
+        CoreUtils.SetKeyword(cameraBuffer, distanceShadowmaskKeyword, shadowmaskExists && useDistanceShadowmask);
         CoreUtils.SetKeyword(cameraBuffer, subtractiveLightingKeyword, subtractiveLighting);
 
 
@@ -444,7 +447,7 @@ public class MyPipeline : RenderPipeline
     {
         float tileSize = shadowMapSize / 2;
         cascadedShadowMap = SetShadowRenderTarget();
-        shadowBuffer.BeginSample("Render Main Shadows");
+        shadowBuffer.BeginSample("Render Shadows");
 
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
@@ -491,7 +494,7 @@ public class MyPipeline : RenderPipeline
         bool hard = shadowLight.shadows == LightShadows.Hard;
         CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsHardKeyword, hard);
         CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsSoftKeyword, !hard);
-        shadowBuffer.EndSample("Render Main Shadows");
+        shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
     }
@@ -617,8 +620,8 @@ public class MyPipeline : RenderPipeline
         //    shadowBuffer.DisableShaderKeyword(shadowSoftKeyword);
         //}
         //下面是上面的封装
-        CoreUtils.SetKeyword(shadowBuffer, shadowHardKeyword, hardShadows);
-        CoreUtils.SetKeyword(shadowBuffer, shadowSoftKeyword, softShadows);
+        CoreUtils.SetKeyword(shadowBuffer, shadowsHardKeyword, hardShadows);
+        CoreUtils.SetKeyword(shadowBuffer, shadowsSoftKeyword, softShadows);
 
         shadowBuffer.EndSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);

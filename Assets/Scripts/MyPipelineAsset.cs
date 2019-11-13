@@ -58,6 +58,6 @@ public class MyPipelineAsset : RenderPipelineAsset
 
         return new MyPipeline(dynamicBatching, instancing
             , (int) shadowMapSize, shadowDistance , shadowFadeRange
-            , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
+            , (int) shadowCascades, shadowCascadeSplit);
     }
 }
