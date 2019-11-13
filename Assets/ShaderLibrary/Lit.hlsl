@@ -395,7 +395,6 @@
 		subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);
 		//烘焙颜色 和 阴影颜色 根据 阴影强度 lerp
 		subtractedLighting = lerp(bakedLighting, subtractedLighting, _CascadedShadowStrength);
-		
 		return min(bakedLighting, subtractedLighting);
 	}
 	
