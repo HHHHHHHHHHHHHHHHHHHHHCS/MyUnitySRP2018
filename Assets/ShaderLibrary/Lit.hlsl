@@ -20,6 +20,8 @@
 	CBUFFER_START(UnityPerDraw)
 	//第一个物体世界空间,第二个不规则缩放用
 	float4x4 unity_ObjectToWorld, unity_WorldToObject;
+	//LOD过滤
+	float4 unity_LODFade;
 	//x 组件包含第二种方法使用时的偏移量
 	//y 物体收到几个光的影响
 	float4 unity_LightIndicesOffsetAndCount;
@@ -541,9 +543,26 @@
 		return output;
 	}
 	
+	void LODCrossFadeClip(float4 clipPos)
+	{
+		float lodClipBias = (clipPos.y % 16) / 16;
+		// 这是因为当一个 LOD 级别剪辑时，另一个不应该剪辑，但是现在它们是独立的。
+		// 我们必须使偏置对称，当衰减因子降到0.5以下时，我们可以通过翻转偏置来实现
+		if (unity_LODFade.x < 0.5)
+		{
+			lodClipBias = 1.0 - lodClipBias;
+		}
+		clip(unity_LODFade.x - lodClipBias);
+	}
+	
 	float4 LitPassFragment(VertexOutput input, FRONT_FACE_TYPE isFrontFace: FRONT_FACE_SEMANTIC): SV_TARGET
 	{
 		UNITY_SETUP_INSTANCE_ID(input);
+		
+		#if defined(LOD_FADE_CROSSFADE)
+			LODCrossFadeClip(input.clipPos);
+		#endif
+		
 		input.normal = normalize(input.normal);
 		input.normal = IS_FRONT_VFACE(isFrontFace, input.normal, -input.normal);
 		
