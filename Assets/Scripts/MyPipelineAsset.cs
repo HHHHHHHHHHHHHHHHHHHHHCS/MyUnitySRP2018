@@ -29,6 +29,9 @@ public class MyPipelineAsset : RenderPipelineAsset
     //实例化  减少 相同网格和材质的东西 切换绘制的时间
     [SerializeField] private bool instancing;
 
+    //LOD抖动消融
+    [SerializeField] private Texture2D ditherTexture = null;
+
     //阴影贴图分辨率
     [SerializeField] private ShadowMapSize shadowMapSize = ShadowMapSize._1024;
 
@@ -56,8 +59,8 @@ public class MyPipelineAsset : RenderPipelineAsset
             ? fourCascadesSplit
             : new Vector3(twoCascadesSplit, 0f);
 
-        return new MyPipeline(dynamicBatching, instancing
-            , (int) shadowMapSize, shadowDistance , shadowFadeRange
+        return new MyPipeline(dynamicBatching, instancing, ditherTexture
+            , (int) shadowMapSize, shadowDistance, shadowFadeRange
             , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
     }
 }

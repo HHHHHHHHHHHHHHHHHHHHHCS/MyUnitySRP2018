@@ -11,6 +11,7 @@
 	
 	CBUFFER_START(UnityPerFrame)
 	float4x4 unity_MatrixVP;
+	float4 _DitherTexture_ST;
 	CBUFFER_END
 	
 	CBUFFER_START(UnityPerCamera)
@@ -42,7 +43,6 @@
 	float4 _MainTex_ST;
 	float _Cutoff;
 	CBUFFER_END
-	
 	
 	
 	
@@ -104,6 +104,9 @@
 	
 	TEXTURE2D(unity_ShadowMask);
 	SAMPLER(samplerunity_ShadowMask);
+	
+	TEXTURE2D(_DitherTexture);
+	SAMPLER(sampler_DitherTexture);
 	
 	#define UNITY_MATRIX_M unity_ObjectToWorld
 	#define UNITY_MATRIX_I_M unity_WorldToObject
@@ -545,7 +548,9 @@
 	
 	void LODCrossFadeClip(float4 clipPos)
 	{
-		float lodClipBias = (clipPos.y % 16) / 16;
+		float2 ditherUV = TRANSFORM_TEX(clipPos.xy, _DitherTexture);
+		//用贴图是因为在 Metal 不可靠
+		float lodClipBias = SAMPLE_TEXTURE2D(_DitherTexture, sampler_DitherTexture, ditherUV).a;
 		// 这是因为当一个 LOD 级别剪辑时，另一个不应该剪辑，但是现在它们是独立的。
 		// 我们必须使偏置对称，当衰减因子降到0.5以下时，我们可以通过翻转偏置来实现
 		if (unity_LODFade.x < 0.5)

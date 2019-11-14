@@ -5,12 +5,14 @@
 	
 	CBUFFER_START(UnityPerFrame)
 	float4x4 unity_MatrixVP;
+	float4 _DitherTexture_ST;
 	CBUFFER_END
 	
 	CBUFFER_START(UnityPerDraw)
 	float4x4 unity_ObjectToWorld;
+	float4 unity_LODFade;
 	CBUFFER_END
-
+	
 	
 	CBUFFER_START(UnityPerMaterial)
 	float4 _MainTex_ST;
@@ -30,6 +32,9 @@
 	UNITY_INSTANCING_BUFFER_START(PerInstance)
 	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
 	UNITY_INSTANCING_BUFFER_END(PerInstance)
+	
+	TEXTURE2D(_DitherTexture);
+	SAMPLER(sampler_DitherTexture);
 	
 	struct VertexInput
 	{
@@ -66,15 +71,34 @@
 		return output;
 	}
 	
+	void LODCrossFadeClip(float4 clipPos)
+	{
+		float2 ditherUV = TRANSFORM_TEX(clipPos.xy, _DitherTexture);
+		//用贴图是因为在 Metal 不可靠
+		float lodClipBias = SAMPLE_TEXTURE2D(_DitherTexture, sampler_DitherTexture, ditherUV).a;
+		// 这是因为当一个 LOD 级别剪辑时，另一个不应该剪辑，但是现在它们是独立的。
+		// 我们必须使偏置对称，当衰减因子降到0.5以下时，我们可以通过翻转偏置来实现
+		if (unity_LODFade.x < 0.5)
+		{
+			lodClipBias = 1.0 - lodClipBias;
+		}
+		clip(unity_LODFade.x - lodClipBias);
+	}
+	
 	float4 ShadowCasterPassFragment(VertexOutput input): SV_TARGET
 	{
 		UNITY_SETUP_INSTANCE_ID(input);
+		
+		#if defined(LOD_FADE_CROSSFADE)
+			LODCrossFadeClip(input.clipPos);
+		#endif
+		
 		#if !defined(_CLIPPING_OFF)
 			float alpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;
 			alpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).a;
 			clip(alpha - _Cutoff);
 		#endif
-		return 0;
+		return 0.0;
 	}
 	
 #endif // MYRP_SHADOWCASTER_INCLUDED

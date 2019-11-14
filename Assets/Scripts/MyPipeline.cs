@@ -20,23 +20,24 @@ public class MyPipeline : RenderPipeline
 
     private const string cascadedShadowsHardKeyword = "_CASCADED_SHADOWS_HARD";
     private const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";
-	private const string shadowsHardKeyword = "_SHADOWS_HARD";
-	private const string shadowsSoftKeyword = "_SHADOWS_SOFT";
+    private const string shadowsHardKeyword = "_SHADOWS_HARD";
+    private const string shadowsSoftKeyword = "_SHADOWS_SOFT";
     private const string shadowmaskKeyword = "_SHADOWMASK";
     private const string distanceShadowmaskKeyword = "_DISTANCE_SHADOWMASK";
     private const string subtractiveLightingKeyword = "_SUBTRACTIVE_LIGHTING";
 
-
+    private static int ditherTextureID = Shader.PropertyToID("_DitherTexture");
+    private static int ditherTextureSTID = Shader.PropertyToID("_DitherTexture_ST");
     private static int visibleLightColorsID = Shader.PropertyToID("_VisibleLightColors");
     private static int visibleLightDirectionsOrPositionsID = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
     private static int visibleLightAttenuationsID = Shader.PropertyToID("_VisibleLightAttenuations");
     private static int visibleLightSpotDirectionsID = Shader.PropertyToID("_VisibleLightSpotDirections");
-	private static int visibleLightOcclusionMaskID = Shader.PropertyToID("_VisibleLightOcclusionMasks");
-	private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
+    private static int visibleLightOcclusionMaskID = Shader.PropertyToID("_VisibleLightOcclusionMasks");
+    private static int lightIndicesOffsetAndCountID = Shader.PropertyToID("unity_LightIndicesOffsetAndCount");
     private static int shadowMapID = Shader.PropertyToID("_ShadowMap");
-	private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
-	private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
-	private static int worldToShadowCascadeMatricesID = Shader.PropertyToID("_WorldToShadowCascadeMatrices");
+    private static int cascadedShadowMapID = Shader.PropertyToID("_CascadedShadowMap");
+    private static int worldToShadowMatricesID = Shader.PropertyToID("_WorldToShadowMatrices");
+    private static int worldToShadowCascadeMatricesID = Shader.PropertyToID("_WorldToShadowCascadeMatrices");
     private static int shadowBiasID = Shader.PropertyToID("_ShadowBias");
     private static int shadowDataID = Shader.PropertyToID("_ShadowData");
     private static int shadowMapSizeID = Shader.PropertyToID("_ShadowMapSize");
@@ -44,8 +45,7 @@ public class MyPipeline : RenderPipeline
     private static int cascadedShadowStrengthID = Shader.PropertyToID("_CascadedShadowStrength");
     private static int globalShadowDataID = Shader.PropertyToID("_GlobalShadowData");
     private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
-	private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
-
+    private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
 
     private static Camera mainCamera;
 
@@ -67,6 +67,8 @@ public class MyPipeline : RenderPipeline
     {
         name = "Render Shadows"
     };
+
+    private Texture2D ditherTexture;
 
     private CullResults cull;
     private Material errorMaterial;
@@ -95,7 +97,7 @@ public class MyPipeline : RenderPipeline
     private readonly bool syncGameCamera;
 #endif
 
-    public MyPipeline(bool dynamicBatching, bool instancing
+    public MyPipeline(bool dynamicBatching, bool instancing, Texture2D _ditherTexture
         , int _shadowMapSize, float _shadowDistance, float _shadowFadeRange
         , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
@@ -112,6 +114,8 @@ public class MyPipeline : RenderPipeline
         {
             drawFlags = DrawRendererFlags.EnableDynamicBatching;
         }
+
+        ditherTexture = _ditherTexture;
 
         if (instancing)
         {
@@ -162,6 +166,9 @@ public class MyPipeline : RenderPipeline
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
     {
         base.Render(renderContext, cameras);
+
+        ConfigureDitherPattern(renderContext);
+
         foreach (var camera in cameras)
         {
             Render(renderContext, camera);
@@ -307,6 +314,14 @@ public class MyPipeline : RenderPipeline
             RenderTexture.ReleaseTemporary(cascadedShadowMap);
             cascadedShadowMap = null;
         }
+    }
+
+    private void ConfigureDitherPattern(ScriptableRenderContext context)
+    {
+        cameraBuffer.SetGlobalTexture(ditherTextureID,ditherTexture);
+        cameraBuffer.SetGlobalVector(ditherTextureSTID,new Vector4(1f/64f,1f/64f,0f,0f));
+        context.ExecuteCommandBuffer(cameraBuffer);
+        cameraBuffer.Clear();
     }
 
 
