@@ -12,6 +12,7 @@ using UnityEngine.Experimental.GlobalIllumination;
 using LightType = UnityEngine.LightType;
 using Conditional = System.Diagnostics.ConditionalAttribute;
 using Lightmapping = UnityEngine.Experimental.GlobalIllumination.Lightmapping;
+using Random = UnityEngine.Random;
 
 public class MyPipeline : RenderPipeline
 {
@@ -69,6 +70,10 @@ public class MyPipeline : RenderPipeline
     };
 
     private Texture2D ditherTexture;
+    private float ditherAnimationFrameDuration;
+    private Vector4[] ditherSTs;
+    private float lastDitherTime;
+    private int ditherSTIndex = -1;
 
     private CullResults cull;
     private Material errorMaterial;
@@ -98,7 +103,7 @@ public class MyPipeline : RenderPipeline
 #endif
 
     public MyPipeline(bool dynamicBatching, bool instancing, Texture2D _ditherTexture
-        , int _shadowMapSize, float _shadowDistance, float _shadowFadeRange
+        , float _ditherAnimationSpeed, int _shadowMapSize, float _shadowDistance, float _shadowFadeRange
         , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
@@ -116,6 +121,10 @@ public class MyPipeline : RenderPipeline
         }
 
         ditherTexture = _ditherTexture;
+        if (_ditherAnimationSpeed > 0f)
+        {
+            ConfigureDitherAnimation(_ditherAnimationSpeed);
+        }
 
         if (instancing)
         {
@@ -316,14 +325,52 @@ public class MyPipeline : RenderPipeline
         }
     }
 
-    private void ConfigureDitherPattern(ScriptableRenderContext context)
+    private void ConfigureDitherAnimation(float ditherAnimationSpeed)
     {
-        cameraBuffer.SetGlobalTexture(ditherTextureID,ditherTexture);
-        cameraBuffer.SetGlobalVector(ditherTextureSTID,new Vector4(1f/64f,1f/64f,0f,0f));
-        context.ExecuteCommandBuffer(cameraBuffer);
-        cameraBuffer.Clear();
+        ditherAnimationFrameDuration = 1f / ditherAnimationSpeed;
+        Random.State state = Random.state;
+        Random.InitState(0);
+        ditherSTs = new Vector4[16];
+        for (int i = 0; i < ditherSTs.Length; i++)
+        {
+            //水平每隔N帧数 偏移  ,  垂直每隔随机帧数偏移
+            ditherSTs[i] = new Vector4(
+                (i & 1) == 0 ? (1f / 64f) : (-1f / 64f),
+                (i & 2) == 0 ? (1f / 64f) : (-1f / 64f),
+                Random.value, Random.value
+            );
+        }
+
+        Random.state = state;
     }
 
+    private void ConfigureDitherPattern(ScriptableRenderContext context)
+    {
+        if (ditherSTIndex < 0)
+        {
+            ditherSTIndex = 0;
+            lastDitherTime = Time.unscaledTime;
+
+            cameraBuffer.SetGlobalTexture(ditherTextureID, ditherTexture);
+            cameraBuffer.SetGlobalVector(ditherTextureSTID, new Vector4(1f / 64f, 1f / 64f, 0f, 0f));
+            context.ExecuteCommandBuffer(cameraBuffer);
+            cameraBuffer.Clear();
+        }
+        else if (ditherAnimationFrameDuration > 0f && Application.isPlaying)
+        {
+            float currentTime = Time.unscaledTime;
+            if (currentTime - lastDitherTime >= ditherAnimationFrameDuration)
+            {
+                lastDitherTime = currentTime;
+                ditherSTIndex = ditherSTIndex < 15 ? ditherSTIndex + 1 : 0;
+                cameraBuffer.SetGlobalVector(
+                    ditherTextureSTID, ditherSTs[ditherSTIndex]);
+            }
+
+            context.ExecuteCommandBuffer(cameraBuffer);
+            cameraBuffer.Clear();
+        }
+    }
 
     private void ConfigureLights()
     {
