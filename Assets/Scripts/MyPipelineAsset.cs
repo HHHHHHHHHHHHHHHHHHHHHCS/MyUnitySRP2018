@@ -35,6 +35,9 @@ public class MyPipelineAsset : RenderPipelineAsset
     //LOD抖动消融过渡速度
     [SerializeField, Range(0f, 120f)] private float ditherAnimationSpeed = 30f;
 
+    //LOD的过渡
+    [SerializeField] private bool supportLODCrossFading = true;
+
     //阴影贴图分辨率
     [SerializeField] private ShadowMapSize shadowMapSize = ShadowMapSize._1024;
 
@@ -55,6 +58,10 @@ public class MyPipelineAsset : RenderPipelineAsset
 
     //同步Camera
     [SerializeField] private bool syncGameCamera = false;
+
+    public bool HasShadowCascades => shadowCascades != ShadowCascades.Zero;
+
+    public bool HasLODCrossFading => supportLODCrossFading;
 
     protected override IRenderPipeline InternalCreatePipeline()
     {

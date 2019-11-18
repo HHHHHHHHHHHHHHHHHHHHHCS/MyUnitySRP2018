@@ -756,8 +756,8 @@ public class MyPipeline : RenderPipeline
     {
         if (errorMaterial == null)
         {
-            Shader errShader = Shader.Find("Hidden/InternalErrorShader");
-            errorMaterial = new Material(errShader)
+            Shader errorShader = Shader.Find("Hidden/InternalErrorShader");
+            errorMaterial = new Material(errorShader)
             {
                 hideFlags = HideFlags.HideAndDontSave
             };
