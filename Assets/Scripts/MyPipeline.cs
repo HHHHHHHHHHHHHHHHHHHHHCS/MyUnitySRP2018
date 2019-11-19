@@ -48,6 +48,9 @@ public class MyPipeline : RenderPipeline
     private static int cascadeCullingSpheresID = Shader.PropertyToID("_CascadeCullingSpheres");
     private static int subtractiveShadowColorID = Shader.PropertyToID("_SubtractiveShadowColor");
 
+    private static int cameraColorTextureID = Shader.PropertyToID("_CameraColorTexture");
+    private static int cameraDepthTextureID = Shader.PropertyToID("_CameraDepthTexture");
+
     private static Camera mainCamera;
 
     private static Vector4[] occlusionMasks =
@@ -68,6 +71,13 @@ public class MyPipeline : RenderPipeline
     {
         name = "Render Shadows"
     };
+
+    private readonly CommandBuffer postProcessingBuffer = new CommandBuffer()
+    {
+        name = "Post-Processing"
+    };
+
+    private MyPostProcessingStack defaultStack;
 
     private Texture2D ditherTexture;
     private float ditherAnimationFrameDuration;
@@ -102,9 +112,9 @@ public class MyPipeline : RenderPipeline
     private readonly bool syncGameCamera;
 #endif
 
-    public MyPipeline(bool dynamicBatching, bool instancing, Texture2D _ditherTexture
-        , float _ditherAnimationSpeed, int _shadowMapSize, float _shadowDistance, float _shadowFadeRange
-        , int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
+    public MyPipeline(bool dynamicBatching, bool instancing, MyPostProcessingStack _defaultStack,
+        Texture2D _ditherTexture, float _ditherAnimationSpeed, int _shadowMapSize, float _shadowDistance
+        , float _shadowFadeRange, int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -130,6 +140,8 @@ public class MyPipeline : RenderPipeline
         {
             drawFlags |= DrawRendererFlags.EnableInstancing;
         }
+
+        defaultStack = _defaultStack;
 
         shadowMapSize = _shadowMapSize;
         shadowDistance = _shadowDistance;
@@ -242,6 +254,19 @@ public class MyPipeline : RenderPipeline
 
         context.SetupCameraProperties(camera);
 
+        if (defaultStack)
+        {
+            cameraBuffer.GetTemporaryRT(cameraColorTextureID, camera.pixelWidth, camera.pixelHeight, 0);
+
+            cameraBuffer.GetTemporaryRT(cameraDepthTextureID, camera.pixelWidth, camera.pixelHeight, 24
+                , FilterMode.Point, RenderTextureFormat.Depth);
+
+            cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.DontCare,
+                RenderBufferStoreAction.Store, cameraDepthTextureID, RenderBufferLoadAction.DontCare,
+                RenderBufferStoreAction.Store);
+        }
+
+
         CameraClearFlags clearFlags = camera.clearFlags;
         cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0
             , (clearFlags & CameraClearFlags.Color) != 0, camera.backgroundColor);
@@ -305,6 +330,14 @@ public class MyPipeline : RenderPipeline
             cull.visibleRenderers, ref drawSettings, filterSettings);
 
         DrawDefaultPipeline(context, camera);
+
+        if (defaultStack)
+        {
+            defaultStack.Render(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID);
+            context.ExecuteCommandBuffer(postProcessingBuffer);
+            postProcessingBuffer.Clear();
+            cameraBuffer.ReleaseTemporaryRT(cameraColorTextureID);
+        }
 
         cameraBuffer.EndSample("Render Camera");
         context.ExecuteCommandBuffer(cameraBuffer);
@@ -509,7 +542,7 @@ public class MyPipeline : RenderPipeline
     {
         float tileSize = shadowMapSize / 2;
         cascadedShadowMap = SetShadowRenderTarget();
-        shadowBuffer.BeginSample("Render Shadows");
+        shadowBuffer.BeginSample("Render Main Shadows");
 
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
@@ -556,7 +589,7 @@ public class MyPipeline : RenderPipeline
         bool hard = shadowLight.shadows == LightShadows.Hard;
         CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsHardKeyword, hard);
         CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsSoftKeyword, !hard);
-        shadowBuffer.EndSample("Render Shadows");
+        shadowBuffer.EndSample("Render Main Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
     }
@@ -589,7 +622,7 @@ public class MyPipeline : RenderPipeline
 
         shadowMap = SetShadowRenderTarget();
 
-        shadowBuffer.BeginSample("Render Shadows");
+        shadowBuffer.BeginSample("Render Addition Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
@@ -685,7 +718,7 @@ public class MyPipeline : RenderPipeline
         CoreUtils.SetKeyword(shadowBuffer, shadowsHardKeyword, hardShadows);
         CoreUtils.SetKeyword(shadowBuffer, shadowsSoftKeyword, softShadows);
 
-        shadowBuffer.EndSample("Render Shadows");
+        shadowBuffer.EndSample("Render Addition Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
     }

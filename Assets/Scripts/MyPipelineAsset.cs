@@ -22,6 +22,8 @@ public class MyPipelineAsset : RenderPipelineAsset
         Four = 4,
     }
 
+    //后处理资源文件
+    [SerializeField] private MyPostProcessingStack defaultStack;
 
     //如果都是大物体不用怎么动态合批  不建议勾选  不然Unity会每帧去计算是否要合批
     [SerializeField] private bool dynamicBatching;
@@ -69,7 +71,7 @@ public class MyPipelineAsset : RenderPipelineAsset
             ? fourCascadesSplit
             : new Vector3(twoCascadesSplit, 0f);
 
-        return new MyPipeline(dynamicBatching, instancing, ditherTexture
+        return new MyPipeline(dynamicBatching, instancing, defaultStack, ditherTexture
             , ditherAnimationSpeed, (int) shadowMapSize, shadowDistance, shadowFadeRange
             , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
     }
