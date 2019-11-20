@@ -256,7 +256,8 @@ public class MyPipeline : RenderPipeline
 
         if (defaultStack)
         {
-            cameraBuffer.GetTemporaryRT(cameraColorTextureID, camera.pixelWidth, camera.pixelHeight, 0);
+            cameraBuffer.GetTemporaryRT(cameraColorTextureID, camera.pixelWidth, camera.pixelHeight, 0
+                , FilterMode.Bilinear);
 
             cameraBuffer.GetTemporaryRT(cameraDepthTextureID, camera.pixelWidth, camera.pixelHeight, 24
                 , FilterMode.Point, RenderTextureFormat.Depth);
@@ -333,10 +334,12 @@ public class MyPipeline : RenderPipeline
 
         if (defaultStack)
         {
-            defaultStack.Render(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID);
+            defaultStack.Render(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
+                , camera.pixelWidth, camera.pixelHeight);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
             cameraBuffer.ReleaseTemporaryRT(cameraColorTextureID);
+            cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureID);
         }
 
         cameraBuffer.EndSample("Render Camera");

@@ -8,6 +8,9 @@
 	TEXTURE2D(_CameraColorTexture);
 	SAMPLER(sampler_CameraColorTexture);
 	
+	TEXTURE2D(_MainTex);
+	SAMPLER(sampler_MainTex);
+	
 	struct VertexInput
 	{
 		float4 pos: POSITION;
@@ -19,7 +22,15 @@
 		float2 uv: TEXCOORD0;
 	};
 	
-	VertexOutput CopyPassVertex(VertexInput input)
+	float4 BlurSample(float2 uv, float uOffset = 0.0, float vOffset = 0.0)
+	{
+		//GPUs会在同一时刻并行运行很多Fragment Shader，但是并不是一个pixel一个pixel去执行的，而是将其组织在2x2的一组pixels分块中，去并行执行
+		//在2x2里面 ddx 就是 右边块 - 左边块    ddy 就是 下边块 减 上面块
+		uv += float2(uOffset * ddx(uv.x), vOffset * ddy(uv.y));
+		return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
+	}
+	
+	VertexOutput DefaultPassVertex(VertexInput input)
 	{
 		VertexOutput output;
 		output.clipPos = float4(input.pos.xy, 0.0, 1.0);
@@ -38,9 +49,19 @@
 	
 	float4 CopyPassFragment(VertexOutput input): SV_TARGET
 	{
-		return SAMPLE_TEXTURE2D(
-			_CameraColorTexture, sampler_CameraColorTexture, input.uv
-		);
+		return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+	}
+	
+	float4 BlurPassFragment(VertexOutput input): SV_TARGET
+	{
+		//因为图片设置了FilterMode.Bilinear 图片会自动双线性过滤
+		
+		float4 color = BlurSample(input.uv, 0.5, 0.5)
+		+ BlurSample(input.uv, -0.5, 0.5)
+		+ BlurSample(input.uv, 0.5, -0.5)
+		+ BlurSample(input.uv, -0.5, -0.5);
+		
+		return float4(color.rgb * 0.25, 1);
 	}
 	
 #endif // MYRP_POST_EFFECT_STACK_INCLUDED

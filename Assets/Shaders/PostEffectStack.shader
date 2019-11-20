@@ -2,20 +2,32 @@
 {
 	SubShader
 	{
+		Cull Off
+		ZTest Always
+		ZWrite Off
+		
+		HLSLINCLUDE
+		#include "../ShaderLibrary/PostEffectStack.hlsl"
+		ENDHLSL
+		
 		Pass
 		{
-			Cull Off
-			ZTest Always
-			ZWrite Off
-			
 			HLSLPROGRAM
 			
 			#pragma target 3.5
-			
-			#pragma vertex CopyPassVertex
+			#pragma vertex DefaultPassVertex
 			#pragma fragment CopyPassFragment
+
+			ENDHLSL
+		}
+		
+		Pass
+		{
+			HLSLPROGRAM
 			
-			#include "../ShaderLibrary/PostEffectStack.hlsl"
+			#pragma target 3.5
+			#pragma vertex DefaultPassVertex
+			#pragma fragment BlurPassFragment
 			
 			ENDHLSL
 			
