@@ -254,7 +254,10 @@ public class MyPipeline : RenderPipeline
 
         context.SetupCameraProperties(camera);
 
-        if (defaultStack)
+        var myPipelineCamera = camera.GetComponent<MyPipelineCamera>();
+        MyPostProcessingStack activeStack = myPipelineCamera ? myPipelineCamera.PostProcessingStack : defaultStack;
+
+        if (activeStack)
         {
             cameraBuffer.GetTemporaryRT(cameraColorTextureID, camera.pixelWidth, camera.pixelHeight, 0
                 , FilterMode.Bilinear);
@@ -324,9 +327,9 @@ public class MyPipeline : RenderPipeline
 
         context.DrawSkybox(camera);
 
-        if (defaultStack)
+        if (activeStack)
         {
-            defaultStack.RenderAfterOpaque(
+            activeStack.RenderAfterOpaque(
                 postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
                 , camera.pixelWidth, camera.pixelHeight);
             context.ExecuteCommandBuffer(postProcessingBuffer);
@@ -347,9 +350,9 @@ public class MyPipeline : RenderPipeline
 
         DrawDefaultPipeline(context, camera);
 
-        if (defaultStack)
+        if (activeStack)
         {
-            defaultStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
+            activeStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
                 , camera.pixelWidth, camera.pixelHeight);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
