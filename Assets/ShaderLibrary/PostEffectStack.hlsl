@@ -3,13 +3,18 @@
 	
 	#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 	
+	//SetupCameraProperties() 传入 _ProjectionParams 和 _ZBufferParams
 	float4 _ProjectionParams;
+	float4 _ZBufferParams;
 	
 	TEXTURE2D(_CameraColorTexture);
 	SAMPLER(sampler_CameraColorTexture);
 	
 	TEXTURE2D(_MainTex);
 	SAMPLER(sampler_MainTex);
+	
+	TEXTURE2D(_DepthTex);
+	SAMPLER(sampler_DepthTex);
 	
 	struct VertexInput
 	{
@@ -62,6 +67,23 @@
 		+ BlurSample(input.uv, -0.5, -0.5);
 		
 		return float4(color.rgb * 0.25, 1);
+	}
+	
+	float4 DepthStripesPassFragment(VertexOutput input): SV_TARGET
+	{
+		float rawDepth = SAMPLE_DEPTH_TEXTURE(_DepthTex, sampler_DepthTex, input.uv);
+		float depth = LinearEyeDepth(rawDepth, _ZBufferParams);
+		float4 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+		#if UNITY_REVERSED_Z
+			bool hasDepth = rawDepth > 0.00001;
+		#else
+			bool hasDepth = rawDepth < 0.99999;
+		#endif
+		if (hasDepth)
+		{
+			color *= pow(sin(3.14 * depth), 2.0);
+		}
+		return color;
 	}
 	
 #endif // MYRP_POST_EFFECT_STACK_INCLUDED

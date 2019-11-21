@@ -10,6 +10,7 @@ public class MyPostProcessingStack : ScriptableObject
     {
         Copy = 0,
         Blur,
+        DepthStripes,
     }
 
     private static Mesh fullScreenTriangle;
@@ -18,8 +19,11 @@ public class MyPostProcessingStack : ScriptableObject
 
     private static int mainTexID = Shader.PropertyToID("_MainTex");
     private static int tempTexID = Shader.PropertyToID("_MyPostProcessingStackTempTex");
+    private static int depthID = Shader.PropertyToID("_DepthTex");
 
     [SerializeField, Range(0, 10)] private int blurStrength;
+    [SerializeField] private bool depthStripes;
+
 
     private static void InitializeStatic()
     {
@@ -48,10 +52,18 @@ public class MyPostProcessingStack : ScriptableObject
         };
     }
 
-    public void Render(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height)
+    public void RenderAfterOpaque(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height)
     {
         InitializeStatic();
 
+        if (depthStripes)
+        {
+            DepthStripes(cb, cameraColorID, cameraDepthID, width, height);
+        }
+    }
+
+    public void RenderAfterTransparent(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height)
+    {
         if (blurStrength > 0)
         {
             Blur(cb, cameraColorID, width, height);
@@ -106,5 +118,19 @@ public class MyPostProcessingStack : ScriptableObject
         cb.ReleaseTemporaryRT(tempTexID);
 
         cb.EndSample("Blur");
+    }
+
+    private void DepthStripes(CommandBuffer cb, int cameraColorID, int cameraDepthID,
+        int width, int height)
+    {
+        cb.BeginSample("Depth Stripes");
+
+        cb.GetTemporaryRT(tempTexID, width, height);
+        cb.SetGlobalTexture(depthID, cameraDepthID);
+        Blit(cb, cameraColorID, tempTexID, Pass.DepthStripes);
+        Blit(cb, tempTexID, cameraColorID);
+        cb.ReleaseTemporaryRT(tempTexID);
+
+        cb.EndSample("Depth Stripes");
     }
 }

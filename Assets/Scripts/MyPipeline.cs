@@ -324,6 +324,21 @@ public class MyPipeline : RenderPipeline
 
         context.DrawSkybox(camera);
 
+        if (defaultStack)
+        {
+            defaultStack.RenderAfterOpaque(
+                postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
+                , camera.pixelWidth, camera.pixelHeight);
+            context.ExecuteCommandBuffer(postProcessingBuffer);
+            postProcessingBuffer.Clear();
+
+            cameraBuffer.SetRenderTarget(
+                cameraColorTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
+                , cameraDepthTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+            context.ExecuteCommandBuffer(cameraBuffer);
+            cameraBuffer.Clear();
+        }
+
 
         drawSettings.sorting.flags = SortFlags.CommonTransparent;
         filterSettings.renderQueueRange = RenderQueueRange.transparent;
@@ -334,10 +349,11 @@ public class MyPipeline : RenderPipeline
 
         if (defaultStack)
         {
-            defaultStack.Render(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
+            defaultStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
                 , camera.pixelWidth, camera.pixelHeight);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
+
             cameraBuffer.ReleaseTemporaryRT(cameraColorTextureID);
             cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureID);
         }
