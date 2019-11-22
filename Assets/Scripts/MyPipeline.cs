@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using Unity.Collections;
 using UnityEditor;
@@ -108,13 +109,13 @@ public class MyPipeline : RenderPipeline
     private bool mainLightExists;
     private Vector4[] visibleLightOcclusionMasks = new Vector4[maxVisibleLights];
 
-#if UNITY_EDITOR
-    private readonly bool syncGameCamera;
-#endif
+    private float renderScale;
+    private int msaaSamples;
 
     public MyPipeline(bool dynamicBatching, bool instancing, MyPostProcessingStack _defaultStack,
         Texture2D _ditherTexture, float _ditherAnimationSpeed, int _shadowMapSize, float _shadowDistance
-        , float _shadowFadeRange, int _shadowCascades, Vector3 _shadowCascadeSplit, bool _syncGameCamera)
+        , float _shadowFadeRange, int _shadowCascades, Vector3 _shadowCascadeSplit, float _renderScale
+        , int _msaaSamples, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -148,10 +149,21 @@ public class MyPipeline : RenderPipeline
         globalShadowData.y = 1f / _shadowFadeRange;
         shadowCascades = _shadowCascades;
         shadowCascadeSplit = _shadowCascadeSplit;
+        renderScale = _renderScale;
+        //设置msaa 如果硬件不支持 则为自动回退为1
+        QualitySettings.antiAliasing = _msaaSamples;
+        msaaSamples = Mathf.Max(QualitySettings.antiAliasing, 1);
 
 #if UNITY_EDITOR
-        syncGameCamera = _syncGameCamera;
-        SceneView.onSceneGUIDelegate += OnSceneView;
+        if (SceneView.onSceneGUIDelegate != null)
+        {
+            SceneView.onSceneGUIDelegate -= OnSceneView;
+        }
+
+        if (_syncGameCamera)
+        {
+            SceneView.onSceneGUIDelegate += OnSceneView;
+        }
 #endif
 
 #if UNITY_EDITOR
@@ -171,8 +183,7 @@ public class MyPipeline : RenderPipeline
 #if UNITY_EDITOR
     private void OnSceneView(SceneView view)
     {
-        if (syncGameCamera)
-        {
+
             if (view != null && view.camera != null && view.camera.cameraType == CameraType.SceneView
                 && mainCamera != null)
             {
@@ -180,7 +191,6 @@ public class MyPipeline : RenderPipeline
                 transform.position = view.camera.transform.position;
                 transform.rotation = view.camera.transform.rotation;
             }
-        }
     }
 #endif
 
@@ -257,17 +267,42 @@ public class MyPipeline : RenderPipeline
         var myPipelineCamera = camera.GetComponent<MyPipelineCamera>();
         MyPostProcessingStack activeStack = myPipelineCamera ? myPipelineCamera.PostProcessingStack : defaultStack;
 
-        if (activeStack)
+        bool scaledRendering = renderScale != 1f && camera.cameraType == CameraType.Game;
+
+        int renderWidth = camera.pixelWidth;
+        int renderHeight = camera.pixelHeight;
+        if (scaledRendering)
         {
-            cameraBuffer.GetTemporaryRT(cameraColorTextureID, camera.pixelWidth, camera.pixelHeight, 0
-                , FilterMode.Bilinear);
+            renderWidth = (int) (renderWidth * renderScale);
+            renderHeight = (int) (renderHeight * renderScale);
+        }
 
-            cameraBuffer.GetTemporaryRT(cameraDepthTextureID, camera.pixelWidth, camera.pixelHeight, 24
-                , FilterMode.Point, RenderTextureFormat.Depth);
+        int renderSamples = camera.allowMSAA ? msaaSamples : 1;
+        bool renderToTexture = scaledRendering || renderSamples > 1 || activeStack;
 
-            cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.DontCare,
-                RenderBufferStoreAction.Store, cameraDepthTextureID, RenderBufferLoadAction.DontCare,
-                RenderBufferStoreAction.Store);
+        bool needsDepth = activeStack && activeStack.NeedsDepth;
+
+        if (renderToTexture)
+        {
+            //需要深度进行处理的的时候  要单独的深度图   不让它进行MSAA
+            //否则可以跟随主颜色进行MSAA
+            cameraBuffer.GetTemporaryRT(cameraColorTextureID, renderWidth, renderHeight, needsDepth ? 0 : 24
+                , FilterMode.Bilinear, RenderTextureFormat.Default, RenderTextureReadWrite.Default, renderSamples);
+
+            if (needsDepth)
+            {
+                cameraBuffer.GetTemporaryRT(cameraDepthTextureID, renderWidth, renderHeight, 24
+                    , FilterMode.Point, RenderTextureFormat.Depth, RenderTextureReadWrite.Linear, 1);
+
+                cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.DontCare,
+                    RenderBufferStoreAction.Store, cameraDepthTextureID, RenderBufferLoadAction.DontCare,
+                    RenderBufferStoreAction.Store);
+            }
+            else
+            {
+                cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.DontCare,
+                    RenderBufferStoreAction.Store);
+            }
         }
 
 
@@ -331,13 +366,22 @@ public class MyPipeline : RenderPipeline
         {
             activeStack.RenderAfterOpaque(
                 postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
-                , camera.pixelWidth, camera.pixelHeight);
+                , renderWidth, renderHeight, renderSamples);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
 
-            cameraBuffer.SetRenderTarget(
-                cameraColorTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
-                , cameraDepthTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+            if (needsDepth)
+            {
+                cameraBuffer.SetRenderTarget(
+                    cameraColorTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
+                    , cameraDepthTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+            }
+            else
+            {
+                cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.Load,
+                    RenderBufferStoreAction.Store);
+            }
+
             context.ExecuteCommandBuffer(cameraBuffer);
             cameraBuffer.Clear();
         }
@@ -350,15 +394,26 @@ public class MyPipeline : RenderPipeline
 
         DrawDefaultPipeline(context, camera);
 
-        if (activeStack)
+        if (renderToTexture)
         {
-            activeStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
-                , camera.pixelWidth, camera.pixelHeight);
-            context.ExecuteCommandBuffer(postProcessingBuffer);
-            postProcessingBuffer.Clear();
+            if (activeStack)
+            {
+                activeStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
+                    , renderWidth, renderHeight, renderSamples);
+                context.ExecuteCommandBuffer(postProcessingBuffer);
+                postProcessingBuffer.Clear();
+            }
+            else
+            {
+                cameraBuffer.Blit(cameraColorTextureID, BuiltinRenderTextureType.CameraTarget);
+            }
+
 
             cameraBuffer.ReleaseTemporaryRT(cameraColorTextureID);
-            cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureID);
+            if (needsDepth)
+            {
+                cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureID);
+            }
         }
 
         cameraBuffer.EndSample("Render Camera");

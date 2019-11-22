@@ -22,6 +22,14 @@ public class MyPipelineAsset : RenderPipelineAsset
         Four = 4,
     }
 
+    public enum MSAAMode
+    {
+        Off = 1,
+        _2x = 2,
+        _4x = 4,
+        _8x = 8,
+    }
+
     //后处理资源文件
     [SerializeField] private MyPostProcessingStack defaultStack;
 
@@ -30,6 +38,7 @@ public class MyPipelineAsset : RenderPipelineAsset
 
     //实例化  减少 相同网格和材质的东西 切换绘制的时间
     [SerializeField] private bool instancing;
+
 
     //LOD抖动消融图片
     [SerializeField] private Texture2D ditherTexture = null;
@@ -58,8 +67,15 @@ public class MyPipelineAsset : RenderPipelineAsset
     //阴影级联 4级距离
     [SerializeField, HideInInspector] private Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);
 
+    //RT的尺寸缩放
+    [SerializeField, Range(0.25f, 2f)] private float renderScale = 1f;
+
+    //抗锯齿
+    [SerializeField] private MSAAMode msaaSamples = MSAAMode.Off;
+
     //同步Camera
     [SerializeField] private bool syncGameCamera = false;
+
 
     public bool HasShadowCascades => shadowCascades != ShadowCascades.Zero;
 
@@ -73,6 +89,6 @@ public class MyPipelineAsset : RenderPipelineAsset
 
         return new MyPipeline(dynamicBatching, instancing, defaultStack, ditherTexture
             , ditherAnimationSpeed, (int) shadowMapSize, shadowDistance, shadowFadeRange
-            , (int) shadowCascades, shadowCascadeSplit, syncGameCamera);
+            , (int) shadowCascades, shadowCascadeSplit, renderScale, (int) msaaSamples, syncGameCamera);
     }
 }
