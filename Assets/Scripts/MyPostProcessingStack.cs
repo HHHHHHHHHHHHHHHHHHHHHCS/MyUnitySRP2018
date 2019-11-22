@@ -20,10 +20,13 @@ public class MyPostProcessingStack : ScriptableObject
     private static int mainTexID = Shader.PropertyToID("_MainTex");
     private static int tempTexID = Shader.PropertyToID("_MyPostProcessingStackTempTex");
     private static int depthID = Shader.PropertyToID("_DepthTex");
+    private static int resolvedTexID = Shader.PropertyToID("_MyPostProcessingStackResolvedTex");
+
 
     [SerializeField, Range(0, 10)] private int blurStrength;
     [SerializeField] private bool depthStripes;
 
+    public bool NeedsDepth => depthStripes;
 
     private static void InitializeStatic()
     {
@@ -52,7 +55,8 @@ public class MyPostProcessingStack : ScriptableObject
         };
     }
 
-    public void RenderAfterOpaque(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height)
+    public void RenderAfterOpaque(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height,
+        int samples)
     {
         InitializeStatic();
 
@@ -62,11 +66,22 @@ public class MyPostProcessingStack : ScriptableObject
         }
     }
 
-    public void RenderAfterTransparent(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height)
+    public void RenderAfterTransparent(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height,
+        int samples)
     {
         if (blurStrength > 0)
         {
-            Blur(cb, cameraColorID, width, height);
+            if (samples > 1)
+            {
+                cb.GetTemporaryRT(resolvedTexID, width, height, 0, FilterMode.Bilinear);
+                Blit(cb, cameraColorID, resolvedTexID);
+                Blur(cb, resolvedTexID, width, height);
+                cb.ReleaseTemporaryRT(resolvedTexID);
+            }
+            else
+            {
+                Blur(cb, cameraColorID, width, height);
+            }
         }
         else
         {
