@@ -26,4 +26,5 @@ MonoBehaviour:
   fourCascadesSplit: {x: 0.067, y: 0.2, z: 0.467}
   renderScale: 1
   msaaSamples: 8
+  allowHDR: 1
   syncGameCamera: 1

@@ -13,4 +13,5 @@ MonoBehaviour:
   m_Name: My Post Processing Stack 1
   m_EditorClassIdentifier: 
   blurStrength: 7
-  depthStripes: 1
+  depthStripes: 0
+  toneMapping: 1

@@ -48,5 +48,19 @@
 			ENDHLSL
 			
 		}
+		
+		Pass
+		{
+			//3.ToneMapping
+			
+			HLSLPROGRAM
+			
+			#pragma target 3.5
+			#pragma vertex DefaultPassVertex
+			#pragma fragment ToneMappingPassFragment
+			
+			ENDHLSL
+			
+		}
 	}
 }

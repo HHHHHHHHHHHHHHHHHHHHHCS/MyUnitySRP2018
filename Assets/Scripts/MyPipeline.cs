@@ -111,11 +111,12 @@ public class MyPipeline : RenderPipeline
 
     private float renderScale;
     private int msaaSamples;
+    private bool allowHDR;
 
     public MyPipeline(bool dynamicBatching, bool instancing, MyPostProcessingStack _defaultStack,
         Texture2D _ditherTexture, float _ditherAnimationSpeed, int _shadowMapSize, float _shadowDistance
         , float _shadowFadeRange, int _shadowCascades, Vector3 _shadowCascadeSplit, float _renderScale
-        , int _msaaSamples, bool _syncGameCamera)
+        , int _msaaSamples, bool _allowHDR, bool _syncGameCamera)
     {
         //Unity 认为光的强度是在伽马空间中定义的，即使我们是在线性空间中工作。
         GraphicsSettings.lightsUseLinearIntensity = true;
@@ -153,6 +154,7 @@ public class MyPipeline : RenderPipeline
         //设置msaa 如果硬件不支持 则为自动回退为1
         QualitySettings.antiAliasing = _msaaSamples;
         msaaSamples = Mathf.Max(QualitySettings.antiAliasing, 1);
+        allowHDR = _allowHDR;
 
 #if UNITY_EDITOR
         if (SceneView.onSceneGUIDelegate != null)
@@ -285,12 +287,15 @@ public class MyPipeline : RenderPipeline
         //专门用DepthOnly 来画深度图
         bool needsDepthOnlyPass = needsDepth && renderSamples > 1;
 
+        RenderTextureFormat format =
+            allowHDR && camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
+
         if (renderToTexture)
         {
             //需要深度进行处理的的时候  要单独的深度图   不让它进行MSAA
             //否则可以跟随主颜色进行MSAA
             cameraBuffer.GetTemporaryRT(cameraColorTextureID, renderWidth, renderHeight, needsDirectDepth ? 0 : 24
-                , FilterMode.Bilinear, RenderTextureFormat.Default, RenderTextureReadWrite.Default, renderSamples);
+                , FilterMode.Bilinear, format, RenderTextureReadWrite.Default, renderSamples);
 
             if (needsDepth)
             {
@@ -393,7 +398,7 @@ public class MyPipeline : RenderPipeline
 
             activeStack.RenderAfterOpaque(
                 postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
-                , renderWidth, renderHeight, renderSamples);
+                , renderWidth, renderHeight, renderSamples, format);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
 
@@ -426,7 +431,7 @@ public class MyPipeline : RenderPipeline
             if (activeStack)
             {
                 activeStack.RenderAfterTransparent(postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
-                    , renderWidth, renderHeight, renderSamples);
+                    , renderWidth, renderHeight, renderSamples, format);
                 context.ExecuteCommandBuffer(postProcessingBuffer);
                 postProcessingBuffer.Clear();
             }

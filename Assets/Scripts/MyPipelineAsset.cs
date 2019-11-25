@@ -73,6 +73,9 @@ public class MyPipelineAsset : RenderPipelineAsset
     //抗锯齿
     [SerializeField] private MSAAMode msaaSamples = MSAAMode.Off;
 
+    //允许HDR
+    [SerializeField] private bool allowHDR;
+
     //同步Camera
     [SerializeField] private bool syncGameCamera = false;
 
@@ -89,6 +92,6 @@ public class MyPipelineAsset : RenderPipelineAsset
 
         return new MyPipeline(dynamicBatching, instancing, defaultStack, ditherTexture
             , ditherAnimationSpeed, (int) shadowMapSize, shadowDistance, shadowFadeRange
-            , (int) shadowCascades, shadowCascadeSplit, renderScale, (int) msaaSamples, syncGameCamera);
+            , (int) shadowCascades, shadowCascadeSplit, renderScale, (int) msaaSamples, allowHDR, syncGameCamera);
     }
 }

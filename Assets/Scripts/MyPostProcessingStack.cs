@@ -11,6 +11,7 @@ public class MyPostProcessingStack : ScriptableObject
         Copy = 0,
         Blur,
         DepthStripes,
+        ToneMapping,
     }
 
     private static Mesh fullScreenTriangle;
@@ -22,9 +23,14 @@ public class MyPostProcessingStack : ScriptableObject
     private static int depthID = Shader.PropertyToID("_DepthTex");
     private static int resolvedTexID = Shader.PropertyToID("_MyPostProcessingStackResolvedTex");
 
-
+    //模糊强度
     [SerializeField, Range(0, 10)] private int blurStrength;
+
+    //深度处理
     [SerializeField] private bool depthStripes;
+
+    //颜色映射
+    [SerializeField] private bool toneMapping;
 
     public bool NeedsDepth => depthStripes;
 
@@ -56,25 +62,33 @@ public class MyPostProcessingStack : ScriptableObject
     }
 
     public void RenderAfterOpaque(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height,
-        int samples)
+        int samples, RenderTextureFormat format)
     {
         InitializeStatic();
 
         if (depthStripes)
         {
-            DepthStripes(cb, cameraColorID, cameraDepthID, width, height);
+            DepthStripes(cb, cameraColorID, cameraDepthID, width, height, format);
         }
     }
 
     public void RenderAfterTransparent(CommandBuffer cb, int cameraColorID, int cameraDepthID, int width, int height,
-        int samples)
+        int samples, RenderTextureFormat format)
     {
         if (blurStrength > 0)
         {
-            if (samples > 1)
+            if (toneMapping || samples > 1)
             {
-                cb.GetTemporaryRT(resolvedTexID, width, height, 0, FilterMode.Bilinear);
-                Blit(cb, cameraColorID, resolvedTexID);
+                cb.GetTemporaryRT(resolvedTexID, width, height, 0, FilterMode.Bilinear, format);
+                if (toneMapping)
+                {
+                    ToneMapping(cb, cameraColorID, resolvedTexID);
+                }
+                else
+                {
+                    Blit(cb, cameraColorID, resolvedTexID);
+                }
+
                 Blur(cb, resolvedTexID, width, height);
                 cb.ReleaseTemporaryRT(resolvedTexID);
             }
@@ -82,6 +96,10 @@ public class MyPostProcessingStack : ScriptableObject
             {
                 Blur(cb, cameraColorID, width, height);
             }
+        }
+        else if (toneMapping)
+        {
+            ToneMapping(cb, cameraColorID, BuiltinRenderTextureType.CameraTarget);
         }
         else
         {
@@ -136,16 +154,25 @@ public class MyPostProcessingStack : ScriptableObject
     }
 
     private void DepthStripes(CommandBuffer cb, int cameraColorID, int cameraDepthID,
-        int width, int height)
+        int width, int height, RenderTextureFormat format)
     {
         cb.BeginSample("Depth Stripes");
 
-        cb.GetTemporaryRT(tempTexID, width, height);
+        cb.GetTemporaryRT(tempTexID, width, height, 0, FilterMode.Point, format);
         cb.SetGlobalTexture(depthID, cameraDepthID);
         Blit(cb, cameraColorID, tempTexID, Pass.DepthStripes);
         Blit(cb, tempTexID, cameraColorID);
         cb.ReleaseTemporaryRT(tempTexID);
 
         cb.EndSample("Depth Stripes");
+    }
+
+    private void ToneMapping(CommandBuffer cb, RenderTargetIdentifier srcID, RenderTargetIdentifier destID)
+    {
+        cb.BeginSample("Tone Mapping");
+
+        Blit(cb, srcID, destID, Pass.ToneMapping);
+
+        cb.EndSample("Tone Mapping");
     }
 }
