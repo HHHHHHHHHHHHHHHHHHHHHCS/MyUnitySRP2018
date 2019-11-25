@@ -183,14 +183,13 @@ public class MyPipeline : RenderPipeline
 #if UNITY_EDITOR
     private void OnSceneView(SceneView view)
     {
-
-            if (view != null && view.camera != null && view.camera.cameraType == CameraType.SceneView
-                && mainCamera != null)
-            {
-                var transform = mainCamera.transform;
-                transform.position = view.camera.transform.position;
-                transform.rotation = view.camera.transform.rotation;
-            }
+        if (view != null && view.camera != null && view.camera.cameraType == CameraType.SceneView
+            && mainCamera != null)
+        {
+            var transform = mainCamera.transform;
+            transform.position = view.camera.transform.position;
+            transform.rotation = view.camera.transform.rotation;
+        }
     }
 #endif
 
@@ -281,19 +280,26 @@ public class MyPipeline : RenderPipeline
         bool renderToTexture = scaledRendering || renderSamples > 1 || activeStack;
 
         bool needsDepth = activeStack && activeStack.NeedsDepth;
+        //如果MSAA != 1 , 则 主贴图需要 24位深度 用来ZTestWrite画
+        bool needsDirectDepth = needsDepth && renderSamples == 1;
+        //专门用DepthOnly 来画深度图
+        bool needsDepthOnlyPass = needsDepth && renderSamples > 1;
 
         if (renderToTexture)
         {
             //需要深度进行处理的的时候  要单独的深度图   不让它进行MSAA
             //否则可以跟随主颜色进行MSAA
-            cameraBuffer.GetTemporaryRT(cameraColorTextureID, renderWidth, renderHeight, needsDepth ? 0 : 24
+            cameraBuffer.GetTemporaryRT(cameraColorTextureID, renderWidth, renderHeight, needsDirectDepth ? 0 : 24
                 , FilterMode.Bilinear, RenderTextureFormat.Default, RenderTextureReadWrite.Default, renderSamples);
 
             if (needsDepth)
             {
                 cameraBuffer.GetTemporaryRT(cameraDepthTextureID, renderWidth, renderHeight, 24
                     , FilterMode.Point, RenderTextureFormat.Depth, RenderTextureReadWrite.Linear, 1);
+            }
 
+            if (needsDirectDepth)
+            {
                 cameraBuffer.SetRenderTarget(cameraColorTextureID, RenderBufferLoadAction.DontCare,
                     RenderBufferStoreAction.Store, cameraDepthTextureID, RenderBufferLoadAction.DontCare,
                     RenderBufferStoreAction.Store);
@@ -364,13 +370,34 @@ public class MyPipeline : RenderPipeline
 
         if (activeStack)
         {
+            if (needsDepth)
+            {
+                if (needsDepthOnlyPass)
+                {
+                    var depthOnlyDrawSettings = new DrawRendererSettings(
+                        camera, new ShaderPassName("DepthOnly"))
+                    {
+                        flags = drawFlags, sorting = {flags = SortFlags.CommonOpaque}
+                    };
+
+
+                    cameraBuffer.SetRenderTarget(cameraDepthTextureID, RenderBufferLoadAction.DontCare,
+                        RenderBufferStoreAction.Store);
+                    cameraBuffer.ClearRenderTarget(true, false, Color.clear);
+                    context.ExecuteCommandBuffer(cameraBuffer);
+                    cameraBuffer.Clear();
+                    context.DrawRenderers(cull.visibleRenderers, ref depthOnlyDrawSettings, filterSettings);
+                }
+            }
+
+
             activeStack.RenderAfterOpaque(
                 postProcessingBuffer, cameraColorTextureID, cameraDepthTextureID
                 , renderWidth, renderHeight, renderSamples);
             context.ExecuteCommandBuffer(postProcessingBuffer);
             postProcessingBuffer.Clear();
 
-            if (needsDepth)
+            if (needsDirectDepth)
             {
                 cameraBuffer.SetRenderTarget(
                     cameraColorTextureID, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
