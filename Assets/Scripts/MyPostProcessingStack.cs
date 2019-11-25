@@ -32,6 +32,9 @@ public class MyPostProcessingStack : ScriptableObject
     //颜色映射
     [SerializeField] private bool toneMapping;
 
+    //颜色映射范围
+    [SerializeField, Range(1f, 100f)] private float toneMappingRange = 100f;
+
     public bool NeedsDepth => depthStripes;
 
     private static void InitializeStatic()
@@ -171,6 +174,7 @@ public class MyPostProcessingStack : ScriptableObject
     {
         cb.BeginSample("Tone Mapping");
 
+        cb.SetGlobalFloat("_ReinhardModifier", 1f / (toneMappingRange * toneMappingRange));
         Blit(cb, srcID, destID, Pass.ToneMapping);
 
         cb.EndSample("Tone Mapping");

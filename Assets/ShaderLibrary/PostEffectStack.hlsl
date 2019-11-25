@@ -6,6 +6,7 @@
 	//SetupCameraProperties() 传入 _ProjectionParams 和 _ZBufferParams
 	float4 _ProjectionParams;
 	float4 _ZBufferParams;
+	float _ReinhardModifier;
 	
 	TEXTURE2D(_CameraColorTexture);
 	SAMPLER(sampler_CameraColorTexture);
@@ -89,7 +90,7 @@
 	float4 ToneMappingPassFragment(VertexOutput input): SV_TARGET
 	{
 		float3 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).rgb;
-		color -= 1;
+		color *= (1 + color * _ReinhardModifier) / (1 + color);
 		return float4(saturate(color), 1);
 	}
 	
