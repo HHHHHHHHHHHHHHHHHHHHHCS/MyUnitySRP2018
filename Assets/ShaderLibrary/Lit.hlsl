@@ -397,7 +397,7 @@
 		float3 shadowedLightingGuess = diffuse * (1.0 - shadowAttenuation);
 		//烘焙发亮 - 实时发亮的 = 多少被遮蔽了(阴影颜色)
 		float3 subtractedLighting = bakedLighting - shadowedLightingGuess;
-		subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);
+		subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor.rgb);
 		//烘焙颜色 和 阴影颜色 根据 阴影强度 lerp
 		subtractedLighting = lerp(bakedLighting, subtractedLighting, _CascadedShadowStrength);
 		return min(bakedLighting, subtractedLighting);
